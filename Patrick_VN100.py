@@ -25,11 +25,11 @@ class VN100IMU:
     data from the IMU.
     """
     
-    def __init__(self, port='/dev/ttyAMA0', baudrate=115200, timeout=1):
+    def __init__(self, port='/dev/serial0', baudrate=115200, timeout=1):
         """
         Initializes the VN100IMU class with specified serial port parameters.
         
-        :param port: Serial port to connect to the IMU (default: '/dev/ttyAMA0').
+        :param port: Serial port to connect to the IMU (default: '/dev/serial0').
         :param baudrate: Communication speed (default: 115200).
         :param timeout: Read timeout in seconds (default: 1).
         """
@@ -141,5 +141,6 @@ if __name__ == "__main__":
                       f"{imu.currentData.a_x:.3f}, {imu.currentData.a_y:.3f}, "
                       f"{imu.currentData.a_z:.3f}, {imu.currentData.temperature:.3f}, "
                       f"{imu.currentData.pressure:.3f}")
+                
     except KeyboardInterrupt:
         print("Data monitoring interrupted.")
