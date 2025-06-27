@@ -1,46 +1,67 @@
 import numpy as np
 
-# Initial state: altitude=0, velocity=0
-x = np.array([[0.0],
-              [0.0]])
+class KalmanFilter:
+    def __init__(self, dt=1/100): # IMU samples at 160 Hz
+        self.dt = dt  # Time step in seconds
 
-P = np.eye(2)  # initial covariance
+        # Initial state: [altitude, vertical_velocity]
+        self.x = np.array([[0.0],  # Altitude
+                           [0.0]]) # Velocity
 
-dt = 0.1  # time step in seconds
-A = np.array([[1, dt],
-              [0,  1]])
+        # Initial uncertainty (covariance)
+        self.P = np.eye(2)
 
-H = np.array([[1, 0]])  # only altitude is observed
+        # State transition matrix
+        self.A = np.array([[1, dt],
+                           [0, 1]])
 
-Q = np.array([[1e-3, 0],
-              [0, 1e-2]])
+        # Observation matrix (only altitude is measured)
+        self.H = np.array([[1, 0]])
 
-R = np.array([[2.0]])  # altimeter noise variance
+        # Process noise covariance (tune for responsiveness)
+        self.Q = np.array([[1e-3, 0],
+                           [0, 1e-2]])
 
-def kalman_filter(z, x, P):
-    # Predict
-    x_pred = A @ x
-    P_pred = A @ P @ A.T + Q
+        # Measurement noise covariance (altimeter noise)
+        self.R = np.array([[2.0]])
 
-    # Update
-    y = z - (H @ x_pred)  # residual
-    S = H @ P_pred @ H.T + R
-    K = P_pred @ H.T @ np.linalg.inv(S)
+    def update(self, z_measured):
+        """
+        Update the Kalman filter with a new altitude measurement.
 
-    x_new = x_pred + K @ y
-    P_new = (np.eye(2) - K @ H) @ P_pred
+        :param z_measured: Altitude measurement (float)
+        :return: (altitude_estimate, vertical_velocity_estimate)
+        """
+        z = np.array([[z_measured]])
 
-    return x_new, P_new
+        # Predict
+        x_pred = self.A @ self.x
+        P_pred = self.A @ self.P @ self.A.T + self.Q
 
-# Example loop simulating incoming altimeter data
-import time
-import random
+        # Kalman gain
+        y = z - (self.H @ x_pred)  # Measurement residual
+        S = self.H @ P_pred @ self.H.T + self.R
+        K = P_pred @ self.H.T @ np.linalg.inv(S)
+
+        # Update estimate
+        self.x = x_pred + K @ y
+        self.P = (np.eye(2) - K @ self.H) @ P_pred
+
+        # Return the estimated state
+        return float(self.x[0]), float(self.x[1])
+
+
+""" import time
+import random  # simulate sensor noise
+
+kf = KalmanFilter(dt=0.1)
 
 while True:
-    altimeter_reading = 100 + np.sin(time.time()) + np.random.normal(0, 1)  # noisy altitude
-    z = np.array([[altimeter_reading]])
+    # Simulate altitude from IMU (replace with real IMU readout)
+    raw_altitude = 100 + np.sin(time.time()) + random.gauss(0, 1.5)
 
-    x, P = kalman_filter(z, x, P)
+    altitude, vertical_velocity = kf.update(raw_altitude)
 
-    print(f"Altitude: {x[0,0]:.2f} m, Vertical Velocity: {x[1,0]:.2f} m/s")
-    time.sleep(dt)
+    print(f"Alt: {altitude:.2f} m, Vel: {vertical_velocity:.2f} m/s")
+
+    time.sleep(0.1) """
