@@ -1,22 +1,25 @@
 import serial
 import time
+import math
 import struct
 from dataclasses import dataclass
 
 @dataclass
-class IMU_data:
+class IMUData:
     """Data structure to hold IMU readings. (time since startup, 
-       RPY, acceleration, temperature, and ambient pressure)"""
-    yaw: float
-    pitch: float
-    roll: float
-    a_x: float
-    a_y: float
-    a_z: float
-    temperature: float
-    pressure: float
+       RPY, acceleration, temperature, pressure, and altitude) """
+    yaw: float # deg
+    pitch: float # deg
+    roll: float # deg
+    a_x: float # G
+    a_y: float # G 
+    a_z: float # G
+    temperature: float # deg C
+    pressure: float # kPa
+    altitude: float # ft. altitude data is derived directly from pressure
+    
 
-class VN100_IMU:
+class VN100IMU:
     """
     VN100IMU class to interface with the VectorNav VN-100 IMU sensor.
     
@@ -105,23 +108,28 @@ class VN100_IMU:
         :param message: The raw byte message received from the IMU.
         :return: IMUData object containing parsed IMU values.
         """
-        # Extract YPR
+        # Extract YPR (deg)
         yaw = struct.unpack('<f', message[5:9])[0]
         pitch = struct.unpack('<f', message[9:13])[0]
         roll = struct.unpack('<f', message[13:17])[0]
 
-        # Extract acceleration data
-        a_x = struct.unpack('<f', message[17:21])[0]
-        a_y = struct.unpack('<f', message[21:25])[0]
-        a_z = struct.unpack('<f', message[25:29])[0]
+        # Extract acceleration data (G)
+        a_x = struct.unpack('<f', message[17:21])[0] / 9.80665
+        a_y = struct.unpack('<f', message[21:25])[0] / 9.80665
+        a_z = struct.unpack('<f', message[25:29])[0] / 9.80665
 
         # Extract pressure data (used for altitude)
-        temperature = struct.unpack('<f', message[29:33])[0]
-        pressure = struct.unpack('<f', message[33:37])[0]
+        temperature = struct.unpack('<f', message[29:33])[0] #Celcius
+        pressure = struct.unpack('<f', message[33:37])[0] # kPa
 
-        return IMU_data(yaw=yaw,pitch=pitch,roll=roll,
+        # Calculate altitude from pressure (ft MSL). 101.325 kPa ref 
+        seaLevelref = 101.325
+        altitude = 145366.45 * (1-math.pow(pressure/seaLevelref, 0.190284))
+
+        return IMUData(yaw=yaw,pitch=pitch,roll=roll,
                         a_x=a_x,a_y=a_y,a_z=a_z,
-                        temperature=temperature,pressure=pressure)
+                        temperature=temperature,pressure=pressure,
+                        altitude=altitude)
     
     def __del__(self):
         """Destructor to ensure serial connection is closed properly."""
@@ -131,7 +139,7 @@ class VN100_IMU:
 
 # Usage example
 if __name__ == "__main__":
-    imu = VN100_IMU()
+    imu = VN100IMU()
     try:
         while True:
             imu.readData()
@@ -141,7 +149,8 @@ if __name__ == "__main__":
                       f"{imu.currentData.roll:.3f}, "
                       f"{imu.currentData.a_x:.3f}, {imu.currentData.a_y:.3f}, "
                       f"{imu.currentData.a_z:.3f}, {imu.currentData.temperature:.3f}, "
-                      f"{imu.currentData.pressure:.3f}")
+                      f"{imu.currentData.pressure:.3f},"
+                      f"{imu.currentData.altitude:.3f}")
                 
     except KeyboardInterrupt:
         print("Data monitoring interrupted.")
