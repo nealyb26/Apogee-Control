@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from collections import deque
 import threading
 
+"""Initializing the Servo"""
+from gpiozero import AngularServo
+from time import sleep
+from gpiozero.pins.pigpio import PiGPIOFactory
+
+factory = PiGPIOFactory()
+servo = AngularServo(16, min_angle=0, max_angle=180, min_pulse_width=0.0005, max_pulse_width=0.0025, pin_factory=factory)
+
 @dataclass
 class IMUData:
     yaw: float  # deg
@@ -183,9 +191,10 @@ def data_logging_process(imu, stop_event, groundAltitude, initialAltitudeAchieve
                 current_altitude = imu.currentData.altitude
 
                 # Check if altitude condition is met
-                if not initialAltitudeAchieved and current_altitude > groundAltitude + 2:
+                if not initialAltitudeAchieved and current_altitude > groundAltitude + 50:
                     initialAltitudeAchieved = True
                     print("Initial Altitude Achieved!")
+                    servo.angle = 45
 
                 data_str = (
                     f"{current_time:.2f},"
@@ -242,6 +251,7 @@ if __name__ == "__main__":
     
     stop_event = threading.Event()
     initialAltitudeAchieved = False
+    servo.angle = 0
 
     # Calculate ground altitude
     groundAltitude = calculate_ground_altitude(imu)
