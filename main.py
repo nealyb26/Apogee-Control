@@ -123,7 +123,7 @@ def calculate_ground_altitude(imu):
     return groundAltitude
 
 def combine_files(pre_file, post_file, output_file):
-    headers = "Time,Yaw,Pitch,Roll,a_x,a_y,a_z,Temperature,Pressure,Altitude,accel_magnitude,apogee,battery_percentage,survivability_percentage,detection_time_H,detection_time_M,detection_time_S,max_velocity,landing_velocity,current_velocity,landedState,initialAltitudeAchieved\n"
+    headers = "Time,Yaw,Pitch,Roll,a_x,a_y,a_z,Temperature,Pressure,Altitude,accel_magnitude,apogee,battery_percentage,survivability_percentage,detection_time_H,detection_time_M,detection_time_S,max_velocity,landing_velocity,current_velocity,landedState,triggerAltitudeAchieved\n"
     with open(output_file, "w") as out_file:
         out_file.write(headers)
         with open(pre_file, "r") as pre_f:
@@ -131,7 +131,7 @@ def combine_files(pre_file, post_file, output_file):
         with open(post_file, "r") as post_f:
             out_file.write(post_f.read())
 
-def data_logging_process(imu, stop_event, groundAltitude, initialAltitudeAchieved):
+def data_logging_process(imu, stop_event, groundAltitude, triggerAltitudeAchieved):
     # Define directory
     base_directory = "Apogee-Control"
     output_directory = os.path.join(base_directory, "IMU_DATA")
@@ -165,14 +165,14 @@ def data_logging_process(imu, stop_event, groundAltitude, initialAltitudeAchieve
                 current_altitude = imu.currentData.altitude
 
                 # Check if altitude condition is met
-                if not initialAltitudeAchieved:
-                    if current_altitude > groundAltitude + 3:
+                if not triggerAltitudeAchieved:
+                    if current_altitude > groundAltitude + 100:
                         consecutive_readings += 1
                     else:
                         consecutive_readings = 0
 
                     if consecutive_readings >= required_consecutive:
-                        initialAltitudeAchieved = True
+                        triggerAltitudeAchieved = True
                         print("Initial Altitude Achieved!")
                         servoMotor.set_angle(180)
 
@@ -198,10 +198,10 @@ def data_logging_process(imu, stop_event, groundAltitude, initialAltitudeAchieve
                     "0.00,"  # Placeholder for landing_velocity
                     "0.00,"  # Placeholder for current_velocity
                     "0,"     # Placeholder for landedState
-                    f"{int(initialAltitudeAchieved)}\n"  # initialAltitudeAchieved
+                    f"{int(triggerAltitudeAchieved)}\n"  # triggerAltitudeAchieved
                 )
 
-                if not initialAltitudeAchieved:
+                if not triggerAltitudeAchieved:
                     rolling_buffer.append(data_str)
                     with open(pre_file, "w") as pre_f:
                         pre_f.write("".join(rolling_buffer))
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     servoMotor = SinceCam()
 
     stop_event = threading.Event()
-    initialAltitudeAchieved = False
+    triggerAltitudeAchieved = False
     servoMotor.set_angle(0)
 
     # Calculate ground altitude
@@ -240,7 +240,7 @@ if __name__ == "__main__":
     # Start the data logging in a separate thread
     logging_thread = threading.Thread(
         target=data_logging_process,
-        args=(imu, stop_event, groundAltitude, initialAltitudeAchieved)
+        args=(imu, stop_event, groundAltitude, triggerAltitudeAchieved)
     )
     logging_thread.start()
 

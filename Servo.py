@@ -2,14 +2,7 @@ from gpiozero import AngularServo
 from time import sleep
 from gpiozero.pins.pigpio import PiGPIOFactory
 
-
 class SinceCam:
-    Pos_fly = 0
-    Pos_brake = 45
-
-class SinceCam:
-    Pos_fly = 0
-    Pos_brake = 45
 
     def __init__(self):
         """
