@@ -6,6 +6,7 @@ from collections import deque
 
 import os
 import threading
+import multiprocessing
 
 from Servo import SinceCam
 
@@ -40,44 +41,38 @@ def combine_files(pre_file, post_file, output_file):
         with open(post_file, "r") as post_f:
             out_file.write(post_f.read())
 
-def data_logging_process(imu, stop_event, groundAltitude, triggerAltitudeAchieved):
-    # Define directory
+def data_logging_process(imu, stop_event, groundAltitude, triggerAltitudeAchieved, kf):
+    if not imu.serialConnection.is_open:
+        imu.serialConnection.open()
+
     base_directory = "Apogee-Control"
-    output_directory = os.path.join(base_directory, "IMU_DATA")
+    output_directory = os.path.join("IMU_DATA")
     os.makedirs(output_directory, exist_ok=True)
 
-    # Define file paths within the directory
     pre_file = os.path.join(output_directory, "data_log_pre.txt")
     post_file = os.path.join(output_directory, "data_log_post.txt")
     output_file = os.path.join(output_directory, "data_log_combined.txt")
 
-    rolling_buffer = deque(maxlen=12000)  # 2-minute buffer at 100 Hz
-    target_frequency = 100  # Hz
+    rolling_buffer = deque(maxlen=12000)
+    target_frequency = 100
     interval = 1 / target_frequency  
-    start_time = time.perf_counter()
-    last_logging_time = start_time
-    landing_event_time = None  
-
-    # Counter for consecutive altitude readings
+    last_logging_time = time.perf_counter()
+    
     consecutive_readings = 0
-    required_consecutive = 5  # Number of consecutive readings needed
-
-    with open(post_file, "w") as post_f:
-        pass
+    required_consecutive = 5
 
     while not stop_event.is_set():
         current_time = time.perf_counter()
-
-        if current_time - last_logging_time >= interval:
+        
+        # Check Data Availability Once
+        if imu.serialConnection.in_waiting > 0 and current_time - last_logging_time >= interval:
             imu.readData()
             if imu.currentData:
                 current_altitude = imu.currentData.altitude
 
-                # Kalman filter update
                 altitude_estimate, velocity_estimate = kf.update(current_altitude)
-                print(current_altitude)
+                print(f"Main Process: Altitude={current_altitude:.2f} ft")
 
-                # Check if altitude condition is met
                 if not triggerAltitudeAchieved:
                     if current_altitude > groundAltitude + 100:
                         consecutive_readings += 1
@@ -100,9 +95,9 @@ def data_logging_process(imu, stop_event, groundAltitude, triggerAltitudeAchieve
                     f"{imu.currentData.temperature:.2f},"
                     f"{imu.currentData.pressure:.2f},"
                     f"{imu.currentData.altitude:.2f},"
-                    f"{velocity_estimate:.2f}," #from kf
-                    f"{altitude_estimate:.2f}," #from kf
-                    f"{int(triggerAltitudeAchieved)}\n"  # triggerAltitudeAchieved
+                    f"{velocity_estimate:.2f},"
+                    f"{altitude_estimate:.2f},"
+                    f"{int(triggerAltitudeAchieved)}\n"
                 )
 
                 if not triggerAltitudeAchieved:
@@ -115,23 +110,13 @@ def data_logging_process(imu, stop_event, groundAltitude, triggerAltitudeAchieve
                         post_f.write(data_str)
                         post_f.flush()
 
-                    if False:  # Replace this with landing detection logic
-                        if landing_event_time is None:
-                            landing_event_time = current_time
-                            print("Landing detected. Starting post-landing timeout.")
-
-                        if landing_event_time and current_time - landing_event_time >= 120:
-                            print("Timeout reached. Stopping logging process.")
-                            stop_event.set()
-                            break
-
             last_logging_time = current_time
 
     combine_files(pre_file, post_file, output_file)
     print(f"Data logging completed. Logs combined into {output_file}")
 
 if __name__ == "__main__":
-    imu = VN100IMU()  # Assuming you have this class implemented somewhere
+    imu = VN100IMU()
     servoMotor = SinceCam()
 
     stop_event = threading.Event()
@@ -139,26 +124,30 @@ if __name__ == "__main__":
     servoMotor.set_angle(0)
 
     # Initialize Kalman filter
-    kf = KalmanFilter()
+    kf = KalmanFilter(dt=1/100)
 
-    # Calculate ground altitude
     groundAltitude = calculate_ground_altitude(imu)
-
-    # Start the data logging in a separate thread
-    logging_thread = threading.Thread(
-        target=data_logging_process,
-        args=(imu, stop_event, groundAltitude, triggerAltitudeAchieved)
-    )
-    logging_thread.start()
 
     try:
         while not stop_event.is_set():
-            time.sleep(1)  # Main loop operations can be handled here
+            #time.sleep(0.1)  # Additional operations can be handled here
+            pass
     except KeyboardInterrupt:
         print("Stopping due to KeyboardInterrupt.")
         stop_event.set()
 
-    logging_thread.join()
+    #logging_thread.join()
+
+
+
+
+
+
+"""     logging_thread = threading.Thread(
+        target=data_logging_process,
+        args=(imu, stop_event, groundAltitude, triggerAltitudeAchieved, kf)
+    )
+    logging_thread.start() """
 
 
 # Test script to output the current altitude and vertical velocity
