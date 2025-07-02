@@ -16,6 +16,7 @@ launchAcceleration = 3
 TARGET_FREQ = 100
 INTERVAL = 1 / TARGET_FREQ
 PRINT_INTERVAL = 0.5
+PREWRITE_INTERVAL = 1.0  # New: Limit how often pre_file is written
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -43,16 +44,20 @@ def combine_files(pre_file, post_file, output_file):
         writer.writerow(headers)
 
         for file_path in [pre_file, post_file]:
-            with open(file_path, "r") as in_file:
-                for line in in_file:
-                    writer.writerow(line.strip().split(","))
+            if os.path.exists(file_path):
+                with open(file_path, "r") as in_file:
+                    for line in in_file:
+                        writer.writerow(line.strip().split(","))
 
 def imu_reader(imu, imu_queue, stop_event):
     while not stop_event.is_set():
         imu.readData()
         if imu.currentData:
-            imu_queue.put((time.perf_counter(), imu.currentData))
-        time.sleep(1/160)  # Match IMU output rate
+            try:
+                imu_queue.put_nowait((time.perf_counter(), imu.currentData))
+            except queue.Full:
+                pass
+        time.sleep(1/160 * 0.95)  # Small slack to reduce drift
 
 def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf, servoMotor):
     base_directory = "Apogee-Control"
@@ -66,6 +71,7 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
     rolling_buffer = deque(maxlen=12000)
     last_logging_time = time.perf_counter()
     last_print_time = 0
+    last_prewrite_time = 0
 
     consecutive_readings = 0
     required_consecutive = 5
@@ -81,7 +87,8 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
             altitude_estimate, velocity_estimate = kf.update(current_altitude)
 
             if current_time - last_print_time >= PRINT_INTERVAL:
-                print(f"[DataLogger] Altitude={current_altitude:.2f} ft")
+                print(f"Altitude = {current_altitude:.2f} ft,"
+                    f"Velocity = {velocity_estimate:.2f} ft/s")
                 last_print_time = current_time
 
             if not trigger_flag[0]:
@@ -106,9 +113,11 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
 
             if not trigger_flag[0]:
                 rolling_buffer.append(data_row)
-                with open(pre_file, "w", newline='') as pre_f:
-                    writer = csv.writer(pre_f)
-                    writer.writerows(rolling_buffer)
+                if current_time - last_prewrite_time >= PREWRITE_INTERVAL:
+                    with open(pre_file, "w", newline='') as pre_f:
+                        writer = csv.writer(pre_f)
+                        writer.writerows(rolling_buffer)
+                    last_prewrite_time = current_time
             else:
                 with open(post_file, "a", newline='') as post_f:
                     writer = csv.writer(post_f)
@@ -130,7 +139,7 @@ if __name__ == "__main__":
 
     groundAltitude = calculate_ground_altitude(imu)
 
-    imu_queue = queue.Queue()
+    imu_queue = queue.Queue(maxsize=2000)
 
     imu_thread = threading.Thread(target=imu_reader, args=(imu, imu_queue, stop_event))
     logging_thread = threading.Thread(target=data_logging_process,
