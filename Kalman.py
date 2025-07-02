@@ -19,11 +19,11 @@ class KalmanFilter:
         self.H = np.array([[1, 0]])
 
         # Process noise covariance (tune for responsiveness)
-        self.Q = np.array([[1e-3, 0],
-                           [0, 1e-2]])
+        self.Q = np.array([[0.5, 0],
+                           [0, 0.5]])
 
         # Measurement noise covariance (altimeter noise)
-        self.R = np.array([[2.0]])
+        self.R = np.array([[0.5**2]])
 
     def update(self, z_measured):
         """
@@ -31,7 +31,7 @@ class KalmanFilter:
 
         :param z_measured: Altitude measurement (float)
         :return: (altitude_estimate, vertical_velocity_estimate)
-        """
+        """        
         z = np.array([[z_measured]])
 
         # Predict
@@ -48,7 +48,7 @@ class KalmanFilter:
         self.P = (np.eye(2) - K @ self.H) @ P_pred
 
         # Return the estimated state
-        return float(self.x[0]), float(self.x[1])
+        return float(self.x[0][0]), float(self.x[1][0])
 
 
 """ import time
