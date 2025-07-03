@@ -6,8 +6,6 @@ from collections import deque
 import os
 import threading
 import csv
-import signal
-import sys
 from Servo import SinceCam
 
 #############################################################################
@@ -155,13 +153,6 @@ if __name__ == "__main__":
     kf = KalmanFilter(dt=INTERVAL)
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
-
-    def handle_shutdown(signum, frame):
-        print("Signal received. Shutting down...")
-        stop_event.set()
-
-    signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGTERM, handle_shutdown)
 
     groundAltitude = calculate_ground_altitude(imu)
 
