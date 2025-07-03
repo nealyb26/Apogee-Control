@@ -6,6 +6,8 @@ from collections import deque
 import os
 import threading
 import csv
+import signal
+import sys
 from Servo import SinceCam
 
 #############################################################################
@@ -75,7 +77,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     consecutive_readings = 0
     required_consecutive = 5
 
-    def flush_buffer():
+    def flush_pre_buffer():
         with open(pre_file, "w", newline='') as pre_f:
             writer = csv.writer(pre_f)
             writer.writerows(rolling_buffer)
@@ -130,7 +132,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             if not trigger_flag[0]:
                 rolling_buffer.append(data_row)
                 if current_time - last_prewrite_time >= PREWRITE_INTERVAL:
-                    flush_buffer()
+                    flush_pre_buffer()
                     last_prewrite_time = current_time
             else:
                 post_trigger_buffer.append(data_row)
@@ -140,7 +142,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
 
             last_logging_time = current_time
 
-    flush_buffer()
+    flush_pre_buffer()
     flush_post_buffer()
     combine_files(pre_file, post_file, output_file)
     print(f"Data logging completed. Logs combined into {output_file}")
@@ -153,6 +155,13 @@ if __name__ == "__main__":
     kf = KalmanFilter(dt=INTERVAL)
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
+
+    def handle_shutdown(signum, frame):
+        print("Signal received. Shutting down...")
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
 
     groundAltitude = calculate_ground_altitude(imu)
 
