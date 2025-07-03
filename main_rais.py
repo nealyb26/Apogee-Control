@@ -57,6 +57,7 @@ def imu_reader(imu, imu_deque, stop_event):
         if imu.currentData:
             imu_deque.append((time.perf_counter(), imu.currentData))
         time.sleep(1/160 * 0.95)  # Small slack to reduce drift
+        print(imu.altitude)
 
 def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor):
     base_directory = "Apogee-Control"

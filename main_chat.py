@@ -41,7 +41,8 @@ class DataLogger:
 
 def calculate_ground_altitude(imu):
     print("Calculating ground altitude...")
-    altitude_readings = [imu.readData() or imu.currentData.altitude for _ in range(5)]
+    imu.readData()
+    altitude_readings = [imu.currentData.altitude for _ in range(5)]
     time.sleep(0.1)
     groundAltitude = sum(altitude_readings) / len(altitude_readings)
     print(f"Ground Altitude: {groundAltitude:.2f} ft")
