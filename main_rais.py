@@ -91,16 +91,6 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             print(f"Flushed {len(post_trigger_buffer)} post-trigger rows.")
             post_trigger_buffer.clear()
 
-    def handle_shutdown(signum, frame):
-        flush_buffer()
-        flush_post_buffer()
-        combine_files(pre_file, post_file, output_file)
-        print("Gracefully shut down. Files combined.")
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, handle_shutdown)
-    signal.signal(signal.SIGINT, handle_shutdown)
-
     while not stop_event.is_set():
         if not imu_deque:
             time.sleep(0.01)
@@ -165,6 +155,13 @@ if __name__ == "__main__":
     kf = KalmanFilter(dt=INTERVAL)
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
+
+    def handle_shutdown(signum, frame):
+        print("Signal received. Shutting down...")
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
 
     groundAltitude = calculate_ground_altitude(imu)
 
