@@ -7,6 +7,8 @@ import os
 import threading
 import queue
 import csv
+import signal
+import sys
 from Servo import SinceCam
 
 #############################################################################
@@ -16,7 +18,8 @@ launchAcceleration = 3
 TARGET_FREQ = 100
 INTERVAL = 1 / TARGET_FREQ
 PRINT_INTERVAL = 0.5
-PREWRITE_INTERVAL = 1.0  # New: Limit how often pre_file is written
+PREWRITE_INTERVAL = 1.0  # Limit writes to pre_file every 1 second
+POSTWRITE_INTERVAL = 1.0  # Limit writes to post_file every 1 second
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -69,12 +72,38 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
     output_file = os.path.join(output_directory, "data_log_combined.csv")
 
     rolling_buffer = deque(maxlen=12000)
+    post_trigger_buffer = []
     last_logging_time = time.perf_counter()
     last_print_time = 0
     last_prewrite_time = 0
+    last_postwrite_time = 0
 
     consecutive_readings = 0
     required_consecutive = 5
+
+    def flush_buffer():
+        with open(pre_file, "w", newline='') as pre_f:
+            writer = csv.writer(pre_f)
+            writer.writerows(rolling_buffer)
+        print("Pre-trigger buffer flushed to disk.")
+
+    def flush_post_buffer():
+        if post_trigger_buffer:
+            with open(post_file, "a", newline='') as post_f:
+                writer = csv.writer(post_f)
+                writer.writerows(post_trigger_buffer)
+            print(f"Flushed {len(post_trigger_buffer)} post-trigger rows.")
+            post_trigger_buffer.clear()
+
+    def handle_shutdown(signum, frame):
+        flush_buffer()
+        flush_post_buffer()
+        combine_files(pre_file, post_file, output_file)
+        print("Gracefully shut down. Files combined.")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
 
     while not stop_event.is_set():
         try:
@@ -87,20 +116,20 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
             altitude_estimate, velocity_estimate = kf.update(current_altitude)
 
             if current_time - last_print_time >= PRINT_INTERVAL:
-                print(f"Altitude = {current_altitude:.2f} ft,"
-                    f"Velocity = {velocity_estimate:.2f} ft/s")
+                print(f"Altitude={current_altitude:.2f} ft")
+                print(f"Velocity={velocity_estimate:.2f} ft")
                 last_print_time = current_time
 
             if not trigger_flag[0]:
-                if current_altitude > groundAltitude + 100:
+                if current_altitude > groundAltitude + 100: #trigger altitude 100 ft AGL
                     consecutive_readings += 1
                 else:
                     consecutive_readings = 0
 
                 if consecutive_readings >= required_consecutive:
                     trigger_flag[0] = True
-                    print("Initial Altitude Achieved!")
-                    servoMotor.set_angle(180)
+                    print("Target Altitude Achieved!")
+                    servoMotor.set_angle(45)
 
             data_row = [
                 f"{current_time:.2f}",
@@ -114,17 +143,18 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
             if not trigger_flag[0]:
                 rolling_buffer.append(data_row)
                 if current_time - last_prewrite_time >= PREWRITE_INTERVAL:
-                    with open(pre_file, "w", newline='') as pre_f:
-                        writer = csv.writer(pre_f)
-                        writer.writerows(rolling_buffer)
+                    flush_buffer()
                     last_prewrite_time = current_time
             else:
-                with open(post_file, "a", newline='') as post_f:
-                    writer = csv.writer(post_f)
-                    writer.writerow(data_row)
+                post_trigger_buffer.append(data_row)
+                if current_time - last_postwrite_time >= POSTWRITE_INTERVAL:
+                    flush_post_buffer()
+                    last_postwrite_time = current_time
 
             last_logging_time = current_time
 
+    flush_buffer()
+    flush_post_buffer()
     combine_files(pre_file, post_file, output_file)
     print(f"Data logging completed. Logs combined into {output_file}")
 
