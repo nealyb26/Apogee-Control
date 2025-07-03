@@ -45,7 +45,7 @@ def data_logging_initializing():
     rolling_buffer = deque(maxlen=12000)
     target_frequency = 100
     interval = 1 / target_frequency  
-    last_logging_time = time.perf_counter()
+    
 
     return pre_file, post_file, interval, rolling_buffer
 
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     servoMotor.set_angle(0)
 
     pre_file, post_file, interval, buffer = data_logging_initializing()
-
+    last_logging_time = time.perf_counter()
     # Initialize Kalman filter
     kf = KalmanFilter(dt=interval)
 

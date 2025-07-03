@@ -102,7 +102,7 @@ class VN100IMU:
                     if calculatedChecksum == receivedChecksum:
                         self.currentData = self.parseMessage(message)
 
-                        print(f"IMU Read: Altitude={self.currentData.altitude:.2f} ft")
+                        #print(f"IMU Read: Altitude={self.currentData.altitude:.2f} ft")
 
     def parseMessage(self, message):
         """

@@ -16,9 +16,9 @@ LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
 launchAcceleration = 3
 TARGET_FREQ = 100
 INTERVAL = 1 / TARGET_FREQ
-PRINT_INTERVAL = 0.5
-PREWRITE_INTERVAL = 1.0  # Limit writes to pre_file every 1 second
-POSTWRITE_INTERVAL = 1.0  # Limit writes to post_file every 1 second
+PRINT_INTERVAL = 1
+PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 1 second
+POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 1 second
 #############################################################################
 
 def calculate_ground_altitude(imu):
