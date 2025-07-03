@@ -96,9 +96,11 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             time.sleep(0.01)
             continue
 
+        # Discard old data, keep only newest
         while len(imu_deque) > 1:
             imu_deque.popleft()
-        current_time, imu_data = imu_deque.popleft()
+
+        current_time, imu_data = imu_deque.pop()
 
         if current_time - last_logging_time >= INTERVAL:
             current_altitude = imu_data.altitude
@@ -106,7 +108,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
 
             if current_time - last_print_time >= PRINT_INTERVAL:
                 print(f"Altitude={current_altitude:.2f} ft")
-                print(f"Velocity={velocity_estimate:.2f} ft")
+                print(f"Velocity={velocity_estimate:.2f} ft/s")
                 last_print_time = current_time
 
             if not trigger_flag[0]:
