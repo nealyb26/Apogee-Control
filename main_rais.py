@@ -5,7 +5,6 @@ from Kalman import KalmanFilter
 from collections import deque
 import os
 import threading
-import queue
 import csv
 import signal
 import sys
@@ -52,17 +51,14 @@ def combine_files(pre_file, post_file, output_file):
                     for line in in_file:
                         writer.writerow(line.strip().split(","))
 
-def imu_reader(imu, imu_queue, stop_event):
+def imu_reader(imu, imu_deque, stop_event):
     while not stop_event.is_set():
         imu.readData()
         if imu.currentData:
-            try:
-                imu_queue.put_nowait((time.perf_counter(), imu.currentData))
-            except queue.Full:
-                pass
+            imu_deque.append((time.perf_counter(), imu.currentData))
         time.sleep(1/160 * 0.95)  # Small slack to reduce drift
 
-def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf, servoMotor):
+def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor):
     base_directory = "Apogee-Control"
     output_directory = os.path.join("IMU_DATA")
     os.makedirs(output_directory, exist_ok=True)
@@ -106,10 +102,13 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
     signal.signal(signal.SIGINT, handle_shutdown)
 
     while not stop_event.is_set():
-        try:
-            current_time, imu_data = imu_queue.get(timeout=0.1)
-        except queue.Empty:
+        if not imu_deque:
+            time.sleep(0.01)
             continue
+
+        while len(imu_deque) > 1:
+            imu_deque.popleft()
+        current_time, imu_data = imu_deque.popleft()
 
         if current_time - last_logging_time >= INTERVAL:
             current_altitude = imu_data.altitude
@@ -121,7 +120,7 @@ def data_logging_process(imu_queue, stop_event, groundAltitude, trigger_flag, kf
                 last_print_time = current_time
 
             if not trigger_flag[0]:
-                if current_altitude > groundAltitude + 100: #trigger altitude 100 ft AGL
+                if current_altitude > groundAltitude + 100:
                     consecutive_readings += 1
                 else:
                     consecutive_readings = 0
@@ -169,11 +168,11 @@ if __name__ == "__main__":
 
     groundAltitude = calculate_ground_altitude(imu)
 
-    imu_queue = queue.Queue(maxsize=2000)
+    imu_deque = deque(maxlen=1000)
 
-    imu_thread = threading.Thread(target=imu_reader, args=(imu, imu_queue, stop_event))
+    imu_thread = threading.Thread(target=imu_reader, args=(imu, imu_deque, stop_event))
     logging_thread = threading.Thread(target=data_logging_process,
-                                      args=(imu_queue, stop_event, groundAltitude,
+                                      args=(imu_deque, stop_event, groundAltitude,
                                             triggerAltitudeAchieved, kf, servoMotor))
 
     imu_thread.start()
