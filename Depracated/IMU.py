@@ -2,21 +2,22 @@ import serial
 import time
 import math
 import struct
-import threading
 from dataclasses import dataclass
 
 @dataclass
 class IMUData:
-    """Data structure to hold IMU readings."""
-    yaw: float       # deg
-    pitch: float     # deg
-    roll: float      # deg
-    a_x: float       # G
-    a_y: float       # G 
-    a_z: float       # G
-    temperature: float  # °C
-    pressure: float     # kPa
-    altitude: float     # ft (derived from pressure)
+    """Data structure to hold IMU readings. (time since startup, 
+       RPY, acceleration, temperature, pressure, and altitude) """
+    yaw: float # deg
+    pitch: float # deg
+    roll: float # deg
+    a_x: float # G
+    a_y: float # G 
+    a_z: float # G
+    temperature: float # deg C
+    pressure: float # kPa
+    altitude: float # ft. altitude data is derived directly from pressure
+    
 
 class VN100IMU:
     """
@@ -34,16 +35,13 @@ class VN100IMU:
         :param baudrate: Communication speed (default: 115200).
         :param timeout: Read timeout in seconds (default: 1).
         """
+        self.serialConnection = None
+        self.currentData = None
+        
         # Initialize serial connection
         self.serialConnection = serial.Serial(port, baudrate, timeout=timeout)
-        time.sleep(2)  # Allow serial connection to stabilize
-        self.initializeIMU()
-
-        self.currentData = None
-        self.lock = threading.Lock()
-        self.stop_thread = threading.Event()
-        self.read_thread = threading.Thread(target=self._reader_loop, daemon=True)
-        self.read_thread.start()
+        time.sleep(2)  # Allow time for the serial connection to initialize
+        self.initializeIMU()    
 
     def initializeIMU(self):
         """
@@ -63,43 +61,48 @@ class VN100IMU:
         0030 - selecting temp and pres from group 3. convert binary to hex 
                (see table 17)
         '''
+
         time.sleep(1)
         print("IMU initialized, starting data monitoring")
-
 
     @staticmethod
     def calculateCRC(data, length):
         """
         Calculates the CRC (Cyclic Redundancy Check) for data integrity verification.
+
         :param data: The data byte array to calculate CRC on.
         :param length: The length of the data.
         :return: Computed CRC value as an integer.
         """
         crc = 0
         for i in range(length):
-            crc = (crc >> 8) | ((crc << 8) & 0xFFFF)
+            crc = (crc >> 8) | (crc << 8) & 0xFFFF
             crc ^= data[i]
             crc ^= (crc & 0xFF) >> 4
             crc ^= (crc << 12) & 0xFFFF
             crc ^= ((crc & 0xFF) << 5) & 0xFFFF
         return crc
+    
+    def readData(self):
+        """
+        Reads data from the serial port, validates the message using CRC, 
+        and parses it if valid. If data is valid, it stores it in currentData
+        and prints it in a single row format.
+        """
+        if self.serialConnection.in_waiting > 0:  # Check if there is data in the buffer
+            syncByte = self.serialConnection.read(1)  # Read the first byte
 
-    def _reader_loop(self):
-        """
-        Thread to continuously read data from the IMU and send it to currentData
-        """
-        while not self.stop_thread.is_set():
-            if self.serialConnection.in_waiting >= 40: # Check if there is data in the buffer
-                sync = self.serialConnection.read(1)  # Read the first byte
-                if sync == b'\xFA':
-                    message = self.serialConnection.read(39) # Read the next 39 bytes
-                    if len(message) == 39:
-                        calc_crc = self.calculateCRC(message[:37], 37)
-                        recv_crc = int.from_bytes(message[37:39], 'big')
-                        if calc_crc == recv_crc:
-                            parsed = self.parseMessage(message)
-                            with self.lock:
-                                self.currentData = parsed
+            if syncByte == b'\xFA':
+                message = self.serialConnection.read(39)  # Read the next 39 bytes
+
+                if len(message) == 39:
+                    calculatedChecksum = self.calculateCRC(message[:37], 37)
+                    receivedChecksum = int.from_bytes(message[37:39], 'big')
+
+                    if calculatedChecksum == receivedChecksum:
+                        self.currentData = self.parseMessage(message)
+
+                        #print(f"IMU Read: Altitude={self.currentData.altitude:.2f} ft")
 
     def parseMessage(self, message):
         """
@@ -117,38 +120,25 @@ class VN100IMU:
         a_x = struct.unpack('<f', message[17:21])[0] / 9.80665
         a_y = struct.unpack('<f', message[21:25])[0] / 9.80665
         a_z = struct.unpack('<f', message[25:29])[0] / 9.80665
-        
+
         # Extract pressure data (used for altitude)
-        temperature = struct.unpack('<f', message[29:33])[0]
-        pressure = struct.unpack('<f', message[33:37])[0]
+        temperature = struct.unpack('<f', message[29:33])[0] #Celcius
+        pressure = struct.unpack('<f', message[33:37])[0] # kPa
 
-        # Calculate altitude from pressure (ft MSL). 101.325 kPa ref
-        sea_level_ref = 101.325  # kPa
-        if pressure <= 0:
-            altitude = float('nan')
-        else:
-            altitude = 145366.45 * (1 - math.pow(pressure / sea_level_ref, 0.190284))
+        # Calculate altitude from pressure (ft MSL). 101.325 kPa ref 
+        seaLevelref = 101.325
+        altitude = 145366.45 * (1-math.pow(pressure/seaLevelref, 0.190284))
 
-        return IMUData(
-            yaw=yaw, pitch=pitch, roll=roll,
-            a_x=a_x, a_y=a_y, a_z=a_z,
-            temperature=temperature,
-            pressure=pressure,
-            altitude=altitude
-        )
-
-    def readData(self):
-        with self.lock:
-            return self.currentData
-
+        return IMUData(yaw=yaw,pitch=pitch,roll=roll,
+                        a_x=a_x,a_y=a_y,a_z=a_z,
+                        temperature=temperature,pressure=pressure,
+                        altitude=altitude)
+    
     def __del__(self):
         """Destructor to ensure serial connection is closed properly."""
         if self.serialConnection and self.serialConnection.is_open:
-            self.stop_thread.set()
-            self.read_thread.join(timeout=1)
             print("Closing serial connection...")
             self.serialConnection.close()
-
 
 # Usage example
 if __name__ == "__main__":

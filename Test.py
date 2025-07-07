@@ -1,4 +1,4 @@
-from IMU_Test import VN100IMU
+from IMU import VN100IMU
 import time
 
 imu = VN100IMU()
