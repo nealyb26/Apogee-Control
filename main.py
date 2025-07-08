@@ -13,12 +13,14 @@ from Servo import SinceCam
 #############################################################################
 # Constants
 LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
-launchAcceleration = 3
-TARGET_FREQ = 100
+LAUNCH_ACCELERATION = 3
+TRIGGER_ALTITUDE = 100
+TARGET_FREQ = 100 # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
-PRINT_INTERVAL = 1
-PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 1 second
-POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 1 second
+PRINT_INTERVAL = 1 # print every 1s
+IMU_INTERVAL = 1/200 # IMU runs at 160 Hz
+PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 10 seconds
+POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 10 seconds
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -60,13 +62,11 @@ def imu_reader(imu, imu_deque, stop_event):
             #print(f"[imu_reader] Appended altitude: {data.altitude:.2f}")
         else:
             pass
-            #print("[imu_reader] No new data")
-        time.sleep(1/160 * 0.95)
-
+            print("[imu_reader] No new data")
+        time.sleep(IMU_INTERVAL * 0.95)
 
 
 def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor):
-    base_directory = "Apogee-Control"
     output_directory = os.path.join("IMU_DATA")
     os.makedirs(output_directory, exist_ok=True)
 
@@ -74,9 +74,9 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     post_file = os.path.join(output_directory, "data_log_post.csv")
     output_file = os.path.join(output_directory, "data_log_combined.csv")
 
-    rolling_buffer = deque(maxlen=12000)
+    pre_trigger_buffer = deque(maxlen=12000)
     post_trigger_buffer = []
-    last_logging_time = time.perf_counter()
+
     last_print_time = 0
     last_prewrite_time = 0
     last_postwrite_time = 0
@@ -87,74 +87,83 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     def flush_pre_buffer():
         with open(pre_file, "w", newline='') as pre_f:
             writer = csv.writer(pre_f)
-            writer.writerows(rolling_buffer)
-        print("Pre-trigger buffer flushed to disk.")
+            writer.writerows(pre_trigger_buffer)
+        print("[Log] Pre-trigger buffer flushed to disk.")
 
     def flush_post_buffer():
         if post_trigger_buffer:
             with open(post_file, "a", newline='') as post_f:
                 writer = csv.writer(post_f)
                 writer.writerows(post_trigger_buffer)
-            print(f"Flushed {len(post_trigger_buffer)} post-trigger rows.")
+            print(f"[Log] Flushed {len(post_trigger_buffer)} post-trigger rows.")
             post_trigger_buffer.clear()
 
+    next_logging_time = time.perf_counter()
+
     while not stop_event.is_set():
+        current_time = time.perf_counter()
+        sleep_time = next_logging_time - current_time
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+        next_logging_time += INTERVAL
+
         if not imu_deque:
-            time.sleep(0.01)
             continue
 
-        # Discard old data, keep only newest
+        # Only keep the newest data
         while len(imu_deque) > 1:
             imu_deque.popleft()
 
         current_time, imu_data = imu_deque.pop()
+        current_altitude = imu_data.altitude
+        altitude_estimate, velocity_estimate = kf.update(current_altitude)
 
-        if current_time - last_logging_time >= INTERVAL:
-            current_altitude = imu_data.altitude
-            altitude_estimate, velocity_estimate = kf.update(current_altitude)
+        # Print at a reduced rate
+        if current_time - last_print_time >= PRINT_INTERVAL:
+            print(f"[IMU] Altitude={current_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
+            last_print_time = current_time
 
-            if current_time - last_print_time >= PRINT_INTERVAL:
-                print(f"Altitude={current_altitude:.2f} ft")
-                print(f"Velocity={velocity_estimate:.2f} ft/s")
-                last_print_time = current_time
-
-            if not trigger_flag[0]:
-                if current_altitude > groundAltitude + 100:
-                    consecutive_readings += 1
-                else:
-                    consecutive_readings = 0
-
-                if consecutive_readings >= required_consecutive:
-                    trigger_flag[0] = True
-                    print("Target Altitude Achieved!")
-                    servoMotor.set_angle(45)
-
-            data_row = [
-                f"{current_time:.2f}",
-                f"{imu_data.yaw:.2f}", f"{imu_data.pitch:.2f}", f"{imu_data.roll:.2f}",
-                f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
-                f"{imu_data.temperature:.2f}", f"{imu_data.pressure:.2f}",
-                f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{altitude_estimate:.2f}",
-                f"{int(trigger_flag[0])}"
-            ]
-
-            if not trigger_flag[0]:
-                rolling_buffer.append(data_row)
-                if current_time - last_prewrite_time >= PREWRITE_INTERVAL:
-                    flush_pre_buffer()
-                    last_prewrite_time = current_time
+        # Trigger logic
+        if not trigger_flag[0]:
+            if current_altitude > groundAltitude + 100:
+                consecutive_readings += 1
             else:
-                post_trigger_buffer.append(data_row)
-                if current_time - last_postwrite_time >= POSTWRITE_INTERVAL:
-                    flush_post_buffer()
-                    last_postwrite_time = current_time
+                consecutive_readings = 0
 
-            last_logging_time = current_time
+            if consecutive_readings >= required_consecutive:
+                trigger_flag[0] = True
+                print("[Trigger] Target Altitude Achieved!")
+                servoMotor.set_angle(45)
 
+        # Format the data row
+        data_row = [
+            f"{current_time:.6f}",
+            f"{imu_data.yaw:.2f}", f"{imu_data.pitch:.2f}", f"{imu_data.roll:.2f}",
+            f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
+            f"{imu_data.temperature:.2f}", f"{imu_data.pressure:.2f}",
+            f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{altitude_estimate:.2f}",
+            f"{int(trigger_flag[0])}"
+        ]
+
+        if not trigger_flag[0]:
+            pre_trigger_buffer.append(data_row)
+            if current_time - last_prewrite_time >= PREWRITE_INTERVAL:
+                flush_pre_buffer()
+                last_prewrite_time = current_time
+        else:
+            post_trigger_buffer.append(data_row)
+            if current_time - last_postwrite_time >= POSTWRITE_INTERVAL:
+                flush_post_buffer()
+                last_postwrite_time = current_time
+
+    # Final flush after loop ends
     flush_pre_buffer()
     flush_post_buffer()
     combine_files(pre_file, post_file, output_file)
-    print(f"Data logging completed. Logs combined into {output_file}")
+    print(f"[Shutdown] Data logging completed. Combined logs into {output_file}")
+
+
+
 
 if __name__ == "__main__":
     imu = VN100IMU()

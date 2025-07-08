@@ -49,7 +49,7 @@ class VN100IMU:
         """
         Sends the initialization command to the IMU to configure its output.
         """
-        self.serialConnection.write(b"$VNWRG,75,2,5,05,0108,0030*XX\r\n")
+        self.serialConnection.write(b"$VNWRG,75,2,4,05,0108,0030*XX\r\n")
         ''' 
         explanation of above command:
 
