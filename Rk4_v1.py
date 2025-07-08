@@ -11,11 +11,11 @@ class Rk4:
         self.GRAV_CONST = 9.80665 # gravity (m/s^2)
         self.COEFF_DRAG = 4 # drag coefficient **can be changed**
         self.AIR_DENSITY = 1.225 # air density (kg/m^3)
-        self.MASS = 18.6 # mass (kg) **can be changed**
+        self.MASS = 5.53383 - (247.2/1000) # mass (kg) **can be changed**
         pass
     
     # Rocket Dimensions
-    DIAMETER = 0.1524 # diameter in meters (6 inches) **can be changed**
+    DIAMETER = 0.10668 # diameter in meters (6 inches) **can be changed**
     AREA = np.pi * (DIAMETER / 2)**2 # Cross-sectional Area (m^2)
 
     def rk4_apogee_predictor(self, h0, v0):
