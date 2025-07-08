@@ -15,7 +15,7 @@ class Rk4:
         pass
     
     # Rocket Dimensions
-    DIAMETER = 0.10668 # diameter in meters (6 inches) **can be changed**
+    DIAMETER = 0.102108 # diameter in meters (6 inches) **can be changed**
     AREA = np.pi * (DIAMETER / 2)**2 # Cross-sectional Area (m^2)
 
     def rk4_apogee_predictor(self, h0, v0):
