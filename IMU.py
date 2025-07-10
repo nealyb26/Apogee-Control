@@ -58,7 +58,7 @@ class VN100IMU:
         2 - message sent out on port 2 
         5 - frequency. 800 / 5 = 160 Hz
         05 - selecting groups 1 and 3
-        0110 - selecting YPR and Acceleration from group 1. convert binary to hex
+        0108 - selecting YPR and Acceleration from group 1. convert binary to hex
                (see table 17)
         0030 - selecting temp and pres from group 3. convert binary to hex 
                (see table 17)

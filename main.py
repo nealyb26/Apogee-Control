@@ -9,7 +9,7 @@ import csv
 import signal
 import sys
 from Servo import SinceCam
-
+from Rk4_v1 import Rk4
 #############################################################################
 # Constants
 LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
@@ -18,7 +18,7 @@ TRIGGER_ALTITUDE = 100
 TARGET_FREQ = 100 # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
 PRINT_INTERVAL = 1 # print every 1s
-IMU_INTERVAL = 1/200 # IMU runs at 160 Hz
+IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 10 seconds
 POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 10 seconds
 #############################################################################
@@ -118,14 +118,20 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
         current_altitude = imu_data.altitude
         altitude_estimate, velocity_estimate = kf.update(current_altitude)
 
+        #### RK4 MODEL #################################################################################
+        apogee_prediction_m = Rk4_model.rk4_apogee_predictor(current_altitude *0.3048 , velocity_estimate * 0.3048)
+        apogee_prediction_ft = apogee_prediction_m * 3.28084 # conversion to feet (ft)
+        #################################################################################################
+
         # Print at a reduced rate
         if current_time - last_print_time >= PRINT_INTERVAL:
             print(f"[IMU] Altitude={current_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
+            print(f"[RK4] Projected Apogee = {apogee_prediction_ft:.2f} ft")
             last_print_time = current_time
 
         # Trigger logic
         if not trigger_flag[0]:
-            if current_altitude > groundAltitude + 100:
+            if current_altitude > groundAltitude + TRIGGER_ALTITUDE:
                 consecutive_readings += 1
             else:
                 consecutive_readings = 0
@@ -142,7 +148,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
             f"{imu_data.temperature:.2f}", f"{imu_data.pressure:.2f}",
             f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{altitude_estimate:.2f}",
-            f"{int(trigger_flag[0])}"
+            f"{apogee_prediction_ft:.2f}", f"{int(trigger_flag[0])}"
         ]
 
         if not trigger_flag[0]:
@@ -172,6 +178,7 @@ if __name__ == "__main__":
     servoMotor.set_angle(0)
 
     kf = KalmanFilter(dt=INTERVAL)
+    Rk4_model = Rk4(10) # 10 Hz for simulation loop (dt = 0.1)
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
 

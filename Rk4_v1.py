@@ -9,7 +9,7 @@ class Rk4:
         self.FREQUENCY = frequency
         self.MAX_TIME = 16
         self.GRAV_CONST = 9.80665 # gravity (m/s^2)
-        self.COEFF_DRAG = 4 # drag coefficient **can be changed**
+        self.COEFF_DRAG = 3 # drag coefficient **can be changed**
         self.AIR_DENSITY = 1.225 # air density (kg/m^3)
         self.MASS = 5.53383 - (247.2/1000) # mass (kg) **can be changed**
         pass
