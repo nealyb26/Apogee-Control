@@ -14,7 +14,6 @@ class IMUData:
     a_x: float       # G
     a_y: float       # G 
     a_z: float       # G
-    temperature: float  # °C
     pressure: float     # kPa
     altitude: float     # ft (derived from pressure)
 
@@ -49,18 +48,18 @@ class VN100IMU:
         """
         Sends the initialization command to the IMU to configure its output.
         """
-        self.serialConnection.write(b"$VNWRG,75,2,4,05,0108,0030*XX\r\n")
+        self.serialConnection.write(b"$VNWRG,75,2,4,05,0108,0020*XX\r\n")
         ''' 
         explanation of above command:
 
         $VNWRG - write register
         75 - the register. register 75 is "binary output message configuration"
-        2 - message sent out on port 2 
-        5 - frequency. 800 / 5 = 160 Hz
+        2 - message sent out on port 2. port 2 uses 3V logic levels. port 1 uses 12V
+        4 - rate divisor. 800 / 4 = 200 Hz
         05 - selecting groups 1 and 3
         0108 - selecting YPR and Acceleration from group 1. convert binary to hex
                (see table 17)
-        0030 - selecting temp and pres from group 3. convert binary to hex 
+        0020 - selecting pres from group 3. convert binary to hex 
                (see table 17)
         '''
         time.sleep(1)
@@ -89,13 +88,13 @@ class VN100IMU:
         Thread to continuously read data from the IMU and send it to currentData
         """
         while not self.stop_thread.is_set():
-            if self.serialConnection.in_waiting >= 40: # Check if there is data in the buffer
+            if self.serialConnection.in_waiting >= 36: # Check if there is data in the buffer
                 sync = self.serialConnection.read(1)  # Read the first byte
                 if sync == b'\xFA':
-                    message = self.serialConnection.read(39) # Read the next 39 bytes
-                    if len(message) == 39:
-                        calc_crc = self.calculateCRC(message[:37], 37)
-                        recv_crc = int.from_bytes(message[37:39], 'big')
+                    message = self.serialConnection.read(35) # Read the next 39 bytes
+                    if len(message) == 35:
+                        calc_crc = self.calculateCRC(message[:33], 33)
+                        recv_crc = int.from_bytes(message[33:35], 'big')
                         if calc_crc == recv_crc:
                             parsed = self.parseMessage(message)
                             with self.lock:
@@ -119,8 +118,8 @@ class VN100IMU:
         a_z = struct.unpack('<f', message[25:29])[0] / 9.80665
         
         # Extract pressure data (used for altitude)
-        temperature = struct.unpack('<f', message[29:33])[0]
-        pressure = struct.unpack('<f', message[33:37])[0]
+        pressure  = struct.unpack('<f', message[29:33])[0]
+        
 
         # Calculate altitude from pressure (ft MSL). 101.325 kPa ref
         sea_level_ref = 101.325  # kPa
@@ -132,7 +131,6 @@ class VN100IMU:
         return IMUData(
             yaw=yaw, pitch=pitch, roll=roll,
             a_x=a_x, a_y=a_y, a_z=a_z,
-            temperature=temperature,
             pressure=pressure,
             altitude=altitude
         )
@@ -161,7 +159,7 @@ if __name__ == "__main__":
                 print(f"{imu.currentData.yaw:.3f}, {imu.currentData.pitch:.3f}, "
                       f"{imu.currentData.roll:.3f}, "
                       f"{imu.currentData.a_x:.3f}, {imu.currentData.a_y:.3f}, "
-                      f"{imu.currentData.a_z:.3f}, {imu.currentData.temperature:.3f}, "
+                      f"{imu.currentData.a_z:.3f}, "
                       f"{imu.currentData.pressure:.3f},"
                       f"{imu.currentData.altitude:.3f}")
                 

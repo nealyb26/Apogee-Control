@@ -2,9 +2,9 @@ from IMU import VN100IMU
 import time
 
 imu = VN100IMU()
-time.sleep(1.0)  # Give thread time to start
+time.sleep(1)  # Give thread time to start
 
-for _ in range(500):
+for _ in range(10):
     data = imu.readData()
     if data:
         print(f"Altitude: {data.altitude:.2f} ft")

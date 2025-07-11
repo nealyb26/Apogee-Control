@@ -14,7 +14,7 @@ from Rk4_v1 import Rk4
 # Constants
 LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
 LAUNCH_ACCELERATION = 3
-GOAL_APOGEE = 100 # set goal apogee in ft
+GOAL_APOGEE = 5000 # set goal apogee in ft
 TARGET_FREQ = 100 # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
 PRINT_INTERVAL = 1 # print every 1s
@@ -43,8 +43,9 @@ def combine_files(pre_file, post_file, output_file):
     with open(output_file, "w", newline='') as out_file:
         writer = csv.writer(out_file)
         headers = ["Time", "Yaw", "Pitch", "Roll", "a_x", "a_y", "a_z",
-                   "Temperature", "Pressure", "Altitude",
-                   "kf_velocity", "kf_altitude", "triggerAltitudeAchieved"]
+                    "Pressure", "Altitude",
+                   "kf_velocity", "kf_altitude", "predicted_apogee",
+                   "triggerAltitudeAchieved"]
         writer.writerow(headers)
 
         for file_path in [pre_file, post_file]:
@@ -146,7 +147,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             f"{current_time:.6f}",
             f"{imu_data.yaw:.2f}", f"{imu_data.pitch:.2f}", f"{imu_data.roll:.2f}",
             f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
-            f"{imu_data.temperature:.2f}", f"{imu_data.pressure:.2f}",
+            f"{imu_data.pressure:.2f}",
             f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{altitude_estimate:.2f}",
             f"{apogee_prediction_ft:.2f}", f"{int(trigger_flag[0])}"
         ]
