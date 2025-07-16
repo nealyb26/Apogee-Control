@@ -1,7 +1,7 @@
 import numpy as np
 
 class EKF:
-    def __init__(self, dt=1/100, mass=1.0, Cd=0.5, area=0.01, rho=1.225):
+    def __init__(self, dt=1/100, mass=1.0, Cd=5, area=0.00810708056, rho=1.225):
         self.dt = dt  # Time step (s)
 
         # Rocket parameters
