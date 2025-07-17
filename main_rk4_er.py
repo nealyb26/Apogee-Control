@@ -21,7 +21,7 @@ IMU_INTERVAL = 1/200
 PREWRITE_INTERVAL = 10
 POSTWRITE_INTERVAL = 10
 EVAN_LENGTH = 100
-VEL_GAP = 5
+VEL_GAP = 15
 #############################################################################
 
 def calculate_ground_altitude(imu):
