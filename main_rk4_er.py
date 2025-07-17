@@ -6,19 +6,22 @@ import threading
 import csv
 import signal
 from Servo import SinceCam
+
 from erFilter import DataProcessor
+from Rk4_v1 import Rk4
 
 #############################################################################
 # Constants
-LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
-LAUNCH_ACCELERATION = 3
-GOAL_APOGEE = 5000  # set goal apogee in ft
-TARGET_FREQ = 100  # main loop frequency
+LOGGER_BUFFER = 18000
+GOAL_APOGEE = 5000
+TARGET_FREQ = 100
 INTERVAL = 1 / TARGET_FREQ
-PRINT_INTERVAL = 1  # print every 1s
-IMU_INTERVAL = 1 / 200  # IMU runs at 200 Hz
-PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 10 seconds
-POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 10 seconds
+PRINT_INTERVAL = 1
+IMU_INTERVAL = 1/200
+PREWRITE_INTERVAL = 10
+POSTWRITE_INTERVAL = 10
+EVAN_LENGTH = 100
+VEL_GAP = 5
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -41,8 +44,8 @@ def combine_files(pre_file, post_file, output_file):
     with open(output_file, "w", newline='') as out_file:
         writer = csv.writer(out_file)
         headers = ["Time", "Yaw", "Pitch", "Roll", "a_x", "a_y", "a_z",
-                   "Pressure", "Altitude", "velocity", "smoothed_altitude", 
-                   "triggerAltitudeAchieved"]
+                   "Pressure", "Altitude", "velocity_estimate", "smoothed_altitude",
+                   "predicted_apogee", "triggerAltitudeAchieved"]
         writer.writerow(headers)
 
         for file_path in [pre_file, post_file]:
@@ -58,7 +61,7 @@ def imu_reader(imu, imu_deque, stop_event):
             imu_deque.append((time.perf_counter(), data))
         time.sleep(IMU_INTERVAL * 0.95)
 
-def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, data_processor, servoMotor):
+def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, data_processor, rk4_model, servoMotor):
     output_directory = "IMU_DATA"
     os.makedirs(output_directory, exist_ok=True)
 
@@ -77,18 +80,20 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, da
     required_consecutive = 5
 
     def flush_pre_buffer():
-        with open(pre_file, "w", newline='') as pre_f:
-            writer = csv.writer(pre_f)
-            writer.writerows(pre_trigger_buffer)
-        print("[Log] Pre-trigger buffer flushed to disk.")
+        if pre_trigger_buffer:
+            with open(pre_file, "a", newline='') as pre_f:
+                writer = csv.writer(pre_f)
+                writer.writerows(pre_trigger_buffer)
+            pre_trigger_buffer.clear()
+            print("[Log] Pre-trigger buffer flushed to disk.")
 
     def flush_post_buffer():
         if post_trigger_buffer:
             with open(post_file, "a", newline='') as post_f:
                 writer = csv.writer(post_f)
                 writer.writerows(post_trigger_buffer)
-            print(f"[Log] Flushed {len(post_trigger_buffer)} post-trigger rows.")
             post_trigger_buffer.clear()
+            print(f"[Log] Flushed {len(post_trigger_buffer)} post-trigger rows.")
 
     next_logging_time = time.perf_counter()
 
@@ -107,32 +112,31 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, da
             imu_deque.popleft()
 
         current_time, imu_data = imu_deque.pop()
-        
-        # Use the data processor to process current altitude
+
+        # Process the current altitude
         data_processor.process_data(current_time, imu_data.altitude)
-        results = data_processor.get_results()
-        
-        if results['smoothed_altitude']:
-            smoothed_altitude = results['smoothed_altitude'][-1]
-            velocity_estimate = results['velocity'][-1] if results['velocity'] else 0.0
-        else:
-            continue
+        smoothed_altitude, velocity_estimate = data_processor.get_results()
+
+        # RK4 model for apogee prediction
+        apogee_prediction_m = rk4_model.rk4_apogee_predictor(smoothed_altitude * 0.3048, velocity_estimate * 0.3048)
+        apogee_prediction_ft = apogee_prediction_m * 3.28084 
 
         # Print at a reduced rate
         if current_time - last_print_time >= PRINT_INTERVAL:
-            print(f"[IMU] Altitude={imu_data.altitude:.2f} ft, Smoothed Altitude={smoothed_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
+            print(f"[IMU] Raw Altitude={imu_data.altitude:.2f} ft, Smoothed Altitude={smoothed_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
+            print(f"[RK4] Projected Apogee = {apogee_prediction_ft:.2f} ft")
             last_print_time = current_time
 
-        # Trigger logic - actuate servo when altitude prediction is above goal 5 times
+        # Trigger logic
         if not trigger_flag[0]:
-            if smoothed_altitude > groundAltitude + GOAL_APOGEE:
+            if apogee_prediction_ft > groundAltitude + GOAL_APOGEE:
                 consecutive_readings += 1
             else:
                 consecutive_readings = 0
 
             if consecutive_readings >= required_consecutive:
                 trigger_flag[0] = True
-                print("[Trigger] Target Altitude Achieved!")
+                print("[RK4] Target Apogee Predicted!")
                 servoMotor.set_angle(45)
 
         # Format the data row
@@ -142,7 +146,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, da
             f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
             f"{imu_data.pressure:.2f}",
             f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{smoothed_altitude:.2f}",
-            f"{int(trigger_flag[0])}"
+            f"{apogee_prediction_ft:.2f}", f"{int(trigger_flag[0])}"
         ]
 
         if not trigger_flag[0]:
@@ -160,7 +164,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, da
     flush_pre_buffer()
     flush_post_buffer()
     combine_files(pre_file, post_file, output_file)
-    print(f"[Shutdown] Data logging completed. Combined logs into {output_file}")
+    print("[Shutdown] Data logging completed. Combined logs into", output_file)
 
 if __name__ == "__main__":
     imu = VN100IMU()
@@ -168,9 +172,11 @@ if __name__ == "__main__":
     servoMotor = SinceCam()
     servoMotor.set_angle(0)
 
-    data_processor = DataProcessor()  # Initialize DataProcessor
+    # Initialize DataProcessor
+    data_processor = DataProcessor(evan_length=EVAN_LENGTH, velocity_gap=VEL_GAP)
+    rk4_model = Rk4(10)  # RK4 at 10 Hz for simulation
     stop_event = threading.Event()
-    triggerAltitudeAchieved = [False]  # Use list for mutability across threads
+    triggerAltitudeAchieved = [False] 
 
     def handle_shutdown(signum, frame):
         print("Signal received. Shutting down...")
@@ -182,12 +188,12 @@ if __name__ == "__main__":
 
     groundAltitude = calculate_ground_altitude(imu)
 
-    imu_deque = deque(maxlen=1000)
+    imu_deque = deque(maxlen=50)  # Limit size for better performance
 
     imu_thread = threading.Thread(target=imu_reader, args=(imu, imu_deque, stop_event))
     logging_thread = threading.Thread(target=data_logging_process,
                                       args=(imu_deque, stop_event, groundAltitude,
-                                            triggerAltitudeAchieved, data_processor, servoMotor))
+                                            triggerAltitudeAchieved, data_processor, rk4_model, servoMotor))
 
     imu_thread.start()
     logging_thread.start()
