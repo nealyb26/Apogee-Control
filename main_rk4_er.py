@@ -1,36 +1,22 @@
-import math
 import time
 from IMU import VN100IMU
-from Kalman import KalmanFilter
-from EKF import ExtendedKalmanFilter
 from collections import deque
 import os
 import threading
 import csv
 import signal
-import sys
 from Servo import SinceCam
-from Rk4_v1 import Rk4
+from erFilter import DataProcessor
+
 #############################################################################
-"""
-Deploys fins based on altitude trigger, uses EKF
-"""
-# Conversions
-in_to_m = 0.0254
-ft_to_m = 0.3048
-m_to_ft = 3.28084
 # Constants
 LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
 LAUNCH_ACCELERATION = 3
-ROCKET_MASS = 5.65 # kg
-ROCKET_DIAMETER = 4.014 # in
-ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER * in_to_m )**2 # m^2
-ACS_CD = 5 # CD of rocket with fins deployed
-TRIGGER_ALTITUDE = 100
-TARGET_FREQ = 100 # main loop frequency
+GOAL_APOGEE = 5000  # set goal apogee in ft
+TARGET_FREQ = 100  # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
-PRINT_INTERVAL = 1 # print every 1s
-IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
+PRINT_INTERVAL = 1  # print every 1s
+IMU_INTERVAL = 1 / 200  # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 10 seconds
 POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 10 seconds
 #############################################################################
@@ -55,8 +41,7 @@ def combine_files(pre_file, post_file, output_file):
     with open(output_file, "w", newline='') as out_file:
         writer = csv.writer(out_file)
         headers = ["Time", "Yaw", "Pitch", "Roll", "a_x", "a_y", "a_z",
-                   "Pressure", "Altitude",
-                   "ekf_velocity", "ekf_altitude", "predicted_apogee",
+                   "Pressure", "Altitude", "velocity", "smoothed_altitude", 
                    "triggerAltitudeAchieved"]
         writer.writerow(headers)
 
@@ -71,16 +56,10 @@ def imu_reader(imu, imu_deque, stop_event):
         data = imu.readData()
         if data:
             imu_deque.append((time.perf_counter(), data))
-            # debug print
-            #print(f"[imu_reader] Appended altitude: {data.altitude:.2f}")
-        else:
-            pass
-            print("[imu_reader] No new data")
         time.sleep(IMU_INTERVAL * 0.95)
 
-
-def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ekf, servoMotor):
-    output_directory = os.path.join("IMU_DATA")
+def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, data_processor, servoMotor):
+    output_directory = "IMU_DATA"
     os.makedirs(output_directory, exist_ok=True)
 
     pre_file = os.path.join(output_directory, "data_log_pre.csv")
@@ -90,7 +69,6 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
     pre_trigger_buffer = deque(maxlen=12000)
     post_trigger_buffer = []
 
-    last_time = time.perf_counter()
     last_print_time = 0
     last_prewrite_time = 0
     last_postwrite_time = 0
@@ -129,30 +107,25 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
             imu_deque.popleft()
 
         current_time, imu_data = imu_deque.pop()
-        current_altitude = imu_data.altitude
-        dt = current_time - last_time
-        ekf.predict(dt)
-        altitude_estimate, velocity_estimate= ekf.update(current_altitude * ft_to_m) # altitude in m, vel in mps
-
-        #### RK4 MODEL #################################################################################
-        apogee_prediction_m = Rk4_model.rk4_apogee_predictor(current_altitude * ft_to_m, velocity_estimate)
-        apogee_prediction_ft = apogee_prediction_m * m_to_ft # conversion to feet (ft)
-        #################################################################################################
-
-        # convert altitude and velocity back to ft
-        altitude_estimate = altitude_estimate * m_to_ft
-        velocity_estimate = velocity_estimate * m_to_ft
+        
+        # Use the data processor to process current altitude
+        data_processor.process_data(current_time, imu_data.altitude)
+        results = data_processor.get_results()
+        
+        if results['smoothed_altitude']:
+            smoothed_altitude = results['smoothed_altitude'][-1]
+            velocity_estimate = results['velocity'][-1] if results['velocity'] else 0.0
+        else:
+            continue
 
         # Print at a reduced rate
         if current_time - last_print_time >= PRINT_INTERVAL:
-            print(f"[EKF] dt = {dt:.4f} s")
-            print(f"[IMU] Altitude={current_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
-            print(f"[RK4] Projected Apogee = {apogee_prediction_ft:.2f} ft")
+            print(f"[IMU] Altitude={imu_data.altitude:.2f} ft, Smoothed Altitude={smoothed_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
             last_print_time = current_time
 
-        # Trigger logic
+        # Trigger logic - actuate servo when altitude prediction is above goal 5 times
         if not trigger_flag[0]:
-            if current_altitude > groundAltitude + TRIGGER_ALTITUDE:
+            if smoothed_altitude > groundAltitude + GOAL_APOGEE:
                 consecutive_readings += 1
             else:
                 consecutive_readings = 0
@@ -168,8 +141,8 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
             f"{imu_data.yaw:.2f}", f"{imu_data.pitch:.2f}", f"{imu_data.roll:.2f}",
             f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
             f"{imu_data.pressure:.2f}",
-            f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{altitude_estimate:.2f}",
-            f"{apogee_prediction_ft:.2f}", f"{int(trigger_flag[0])}"
+            f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{smoothed_altitude:.2f}",
+            f"{int(trigger_flag[0])}"
         ]
 
         if not trigger_flag[0]:
@@ -183,16 +156,11 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
                 flush_post_buffer()
                 last_postwrite_time = current_time
 
-        last_time = current_time
-
     # Final flush after loop ends
     flush_pre_buffer()
     flush_post_buffer()
     combine_files(pre_file, post_file, output_file)
     print(f"[Shutdown] Data logging completed. Combined logs into {output_file}")
-
-
-
 
 if __name__ == "__main__":
     imu = VN100IMU()
@@ -200,9 +168,7 @@ if __name__ == "__main__":
     servoMotor = SinceCam()
     servoMotor.set_angle(0)
 
-    #kf = KalmanFilter(dt=INTERVAL)
-    ekf = ExtendedKalmanFilter(mass = ROCKET_MASS, area = ROCKET_AREA, Cd = ACS_CD)
-    Rk4_model = Rk4(10) # 10 Hz for simulation loop (dt = 0.1)
+    data_processor = DataProcessor()  # Initialize DataProcessor
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
 
@@ -221,7 +187,7 @@ if __name__ == "__main__":
     imu_thread = threading.Thread(target=imu_reader, args=(imu, imu_deque, stop_event))
     logging_thread = threading.Thread(target=data_logging_process,
                                       args=(imu_deque, stop_event, groundAltitude,
-                                            triggerAltitudeAchieved, ekf, servoMotor))
+                                            triggerAltitudeAchieved, data_processor, servoMotor))
 
     imu_thread.start()
     logging_thread.start()

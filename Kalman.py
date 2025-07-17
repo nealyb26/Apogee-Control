@@ -20,10 +20,10 @@ class KalmanFilter:
 
         # Process noise covariance (tune for responsiveness)
         self.Q = np.array([[2.04e-2, 0],
-                           [0, 100]])
+                           [0, 5]])
 
         # Measurement noise covariance (altimeter noise)
-        self.R = np.array([[100**2]])
+        self.R = np.array([[5**2]])
 
     def update(self, z_measured):
         """
