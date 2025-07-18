@@ -23,7 +23,7 @@ class KalmanFilter:
                            [0, 5]])
 
         # Measurement noise covariance (altimeter noise)
-        self.R = np.array([[5**2]])
+        self.R = np.array([[40**2]])
 
     def update(self, z_measured):
         """
