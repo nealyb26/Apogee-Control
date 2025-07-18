@@ -26,7 +26,7 @@ g_to_kg = 0.001
 # Constants
 LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
 LAUNCH_ACCELERATION = 3 # In g
-PROPELLANT_MASS = 247,2 * g_to_kg # kg
+PROPELLANT_MASS = 247.2 * g_to_kg # kg
 ROCKET_DRY_MASS = (13.2 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 # in
 ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER * in_to_m )**2 # m^2
