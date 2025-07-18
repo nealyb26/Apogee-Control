@@ -28,8 +28,8 @@ LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
 LAUNCH_ACCELERATION = 3 # In g
 PROPELLANT_MASS = 247.2 * g_to_kg # kg
 ROCKET_DRY_MASS = (13.2 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
-ROCKET_DIAMETER = 4.014 # in
-ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER * in_to_m )**2 # m^2
+ROCKET_DIAMETER = 4.014 * in_to_m # m
+ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER)**2 # m^2
 ACS_CD = 5 # CD of rocket with fins deployed
 TRIGGER_ALTITUDE = 400
 TARGET_APOGEE = 800
@@ -231,7 +231,7 @@ if __name__ == "__main__":
 
     #kf = KalmanFilter(dt=INTERVAL)
     ekf = ExtendedKalmanFilter(mass = ROCKET_DRY_MASS, area = ROCKET_AREA, Cd = ACS_CD)
-    Rk4_model = Rk4(frequency=10, mass=ROCKET_DRY_MASS) # 10 Hz for simulation loop (dt = 0.1)
+    Rk4_model = Rk4(frequency=10, coeeff_drag=ACS_CD, mass=ROCKET_DRY_MASS, area=ROCKET_AREA) # 10 Hz for simulation loop (dt = 0.1)
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
 

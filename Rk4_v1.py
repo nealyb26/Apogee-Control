@@ -5,18 +5,17 @@ import pandas as pd
 
 class Rk4:
 
-    def __init__(self, frequency=10, mass=10):
+    def __init__(self, frequency=10, coeeff_drag = 5, mass=10, area=10):
         self.FREQUENCY = frequency
         self.MAX_TIME = 16
         self.GRAV_CONST = 9.80665 # gravity (m/s^2)
-        self.COEFF_DRAG = 5 # drag coefficient **can be changed**
+        self.COEFF_DRAG = coeeff_drag # drag coefficient **can be changed**
         self.AIR_DENSITY = 1.225 # air density (kg/m^3)
         self.MASS = mass # mass (kg) **can be changed**
+
+        # Rocket Dimensions
+        self.AREA = area
         pass
-    
-    # Rocket Dimensions
-    DIAMETER = 0.102108 # diameter in meters (6 inches) **can be changed**
-    AREA = np.pi * (DIAMETER / 2)**2 # Cross-sectional Area (m^2)
 
     def rk4_apogee_predictor(self, h0, v0):
         
