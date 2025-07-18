@@ -2,7 +2,7 @@ import math
 import time
 from IMU import VN100IMU
 from Kalman import KalmanFilter
-from EKF import ExtendedKalmanFilter
+#from EKF import ExtendedKalmanFilter
 from collections import deque
 import os
 import threading
@@ -11,9 +11,11 @@ import signal
 import sys
 from Servo import SinceCam
 from Rk4_v1 import Rk4
+from erFilter import DataProcessor
 #############################################################################
 """
-Deploys fins based on altitude trigger or RK4 apogee prediction, EKF velocity calculation
+Deploys fins based on altitude trigger or RK4 apogee prediction, 
+Kalman and erFilter
 Has launch detection at 3 G for 50 points (0.5s) 
 """
 # Conversions
@@ -21,6 +23,7 @@ in_to_m = 0.0254
 ft_to_m = 0.3048
 m_to_ft = 3.28084
 lb_to_kg = 0.453592
+kg_to_lb = 1/lb_to_kg
 ft2_to_m2 = 0.092903
 g_to_kg = 0.001
 # Constants
@@ -62,8 +65,10 @@ def combine_files(pre_file, post_file, output_file):
         writer = csv.writer(out_file)
         headers = ["Time", "Yaw", "Pitch", "Roll", "a_x", "a_y", "a_z",
                    "Pressure", "Altitude",
-                   "ekf_velocity", "ekf_altitude", "predicted_apogee",
-                   "triggerAltitudeAchieved"]
+                   "launchDetected"
+                   "kf_velocity", "kf_altitude",
+                   "er_velocity", "er_altitude", 
+                   "predicted_apogee", "triggerAltitudeAchieved"]
         writer.writerow(headers)
 
         for file_path in [pre_file, post_file]:
@@ -106,6 +111,10 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
     consecutive_readings_rk4 = 0
     required_consecutive = 50
 
+    #initialize RK4 variables
+    apogee_prediction_m = 0
+    apogee_prediction_ft = 0
+
     def flush_pre_buffer():
         with open(pre_file, "w", newline='') as pre_f:
             writer = csv.writer(pre_f)
@@ -138,6 +147,17 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
 
         current_time, imu_data = imu_deque.pop()
         current_altitude = imu_data.altitude
+
+        #### erFilter ####
+        data_processor.process_data(current_time, current_altitude)
+        altitude_er, velocity_er = data_processor.get_results()
+
+        #### Kalman Filter ####
+        #dt = current_time - last_time
+        #ekf.predict(dt)
+        altitude_kf, velocity_kf= kf.update(current_altitude)
+
+        # Launch detection logic
         if not launched_flag[0]:
             if abs(imu_data.a_x) > LAUNCH_ACCELERATION:
                 consecutive_readings_gs += 1
@@ -148,31 +168,21 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
                 print(f"[Launch Detected] acceleration = {imu_data.a_x:.2f} which exceeds 3g")
                 launch_time = current_time
         
-        apogee_prediction_m = 0
-        apogee_prediction_ft = 0
-
-        dt = current_time - last_time
-        ekf.predict(dt)
-        altitude_estimate, velocity_estimate= ekf.update(current_altitude * ft_to_m) # altitude in m, vel in mps
-
+        # Check to ensure no premature fin deployment from RK4
         if launched_flag[0]:
             #### RK4 MODEL #################################################################################
-            apogee_prediction_m = Rk4_model.rk4_apogee_predictor(current_altitude * ft_to_m, velocity_estimate)
+            apogee_prediction_m = Rk4_model.rk4_apogee_predictor(current_altitude * ft_to_m, velocity_kf * ft_to_m)
             apogee_prediction_ft = apogee_prediction_m * m_to_ft # conversion to feet (ft)
             #################################################################################################
-
-            # convert altitude and velocity back to ft
-            altitude_estimate = altitude_estimate * m_to_ft
-            velocity_estimate = velocity_estimate * m_to_ft
 
         # Print at a reduced rate
         if current_time - last_print_time >= PRINT_INTERVAL:
             print(f"[EKF] dt = {dt:.4f} s")
-            print(f"[IMU] Altitude={current_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
+            print(f"[IMU] Altitude={current_altitude:.2f} ft, Velocity={velocity_kf:.2f} ft/s")
             print(f"[RK4] Projected Apogee = {apogee_prediction_ft:.2f} ft")
             last_print_time = current_time
 
-        # Trigger logic
+        #### Trigger logic ####################################################################
         if not trigger_flag[0]:
             if current_altitude > groundAltitude + TRIGGER_ALTITUDE:
                 consecutive_readings_alt += 1
@@ -189,14 +199,17 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
                 trigger_flag[0] = True
                 print("[Trigger] Target Altitude Achieved!")
                 servoMotor.set_angle(45)
-
+        ########################################################################################
+        
         # Format the data row
         data_row = [
             f"{current_time:.6f}",
             f"{imu_data.yaw:.2f}", f"{imu_data.pitch:.2f}", f"{imu_data.roll:.2f}",
             f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
-            f"{imu_data.pressure:.2f}",
-            f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{altitude_estimate:.2f}",
+            f"{imu_data.pressure:.2f}", f"{imu_data.altitude:.2f}",
+            f"{int(launched_flag[0])}" 
+            f"{velocity_kf:.2f}", f"{altitude_kf:.2f}",
+            f"{velocity_er:.2f}", f"{altitude_er:.2f}"
             f"{apogee_prediction_ft:.2f}", f"{int(trigger_flag[0])}"
         ]
 
@@ -229,8 +242,8 @@ if __name__ == "__main__":
     servoMotor = SinceCam()
     servoMotor.set_angle(0)
 
-    #kf = KalmanFilter(dt=INTERVAL)
-    ekf = ExtendedKalmanFilter(mass = ROCKET_DRY_MASS, area = ROCKET_AREA, Cd = ACS_CD)
+    kf = KalmanFilter(dt=INTERVAL)
+    #ekf = ExtendedKalmanFilter(mass = ROCKET_DRY_MASS, area = ROCKET_AREA, Cd = ACS_CD)
     Rk4_model = Rk4(frequency=10, coeeff_drag=ACS_CD, mass=ROCKET_DRY_MASS, area=ROCKET_AREA) # 10 Hz for simulation loop (dt = 0.1)
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
