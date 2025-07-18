@@ -6,7 +6,7 @@ import threading
 import csv
 import signal
 from Servo import SinceCam
-
+from Kalman import KalmanFilter
 from erFilter import DataProcessor
 from Rk4_v1 import Rk4
 
@@ -20,7 +20,7 @@ PRINT_INTERVAL = 1
 IMU_INTERVAL = 1/200
 PREWRITE_INTERVAL = 10
 POSTWRITE_INTERVAL = 10
-EVAN_LENGTH = 100
+EVAN_LENGTH = 50
 VEL_GAP = 15
 #############################################################################
 
@@ -44,7 +44,8 @@ def combine_files(pre_file, post_file, output_file):
     with open(output_file, "w", newline='') as out_file:
         writer = csv.writer(out_file)
         headers = ["Time", "Yaw", "Pitch", "Roll", "a_x", "a_y", "a_z",
-                   "Pressure", "Altitude", "velocity_estimate", "smoothed_altitude",
+                   "Pressure", "Altitude", "velocity_er", "smoothed_altitude",
+                   "kf_altitude", "velocity_kf",
                    "predicted_apogee", "triggerAltitudeAchieved"]
         writer.writerow(headers)
 
@@ -113,17 +114,21 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, da
 
         current_time, imu_data = imu_deque.pop()
 
+        current_altitude = imu_data.altitude
+
         # Process the current altitude
-        data_processor.process_data(current_time, imu_data.altitude)
-        smoothed_altitude, velocity_estimate = data_processor.get_results()
+        data_processor.process_data(current_time, current_altitude)
+        smoothed_altitude, velocity_er = data_processor.get_results()
+
+        altitude_kf, velocity_kf = kf.update(current_altitude)
 
         # RK4 model for apogee prediction
-        apogee_prediction_m = rk4_model.rk4_apogee_predictor(smoothed_altitude * 0.3048, velocity_estimate * 0.3048)
+        apogee_prediction_m = rk4_model.rk4_apogee_predictor(smoothed_altitude * 0.3048, velocity_er * 0.3048)
         apogee_prediction_ft = apogee_prediction_m * 3.28084 
 
         # Print at a reduced rate
         if current_time - last_print_time >= PRINT_INTERVAL:
-            print(f"[IMU] Raw Altitude={imu_data.altitude:.2f} ft, Smoothed Altitude={smoothed_altitude:.2f} ft, Velocity={velocity_estimate:.2f} ft/s")
+            print(f"[IMU] Raw Altitude={imu_data.altitude:.2f} ft, Smoothed Altitude={smoothed_altitude:.2f} ft, Velocity={velocity_er:.2f} ft/s")
             print(f"[RK4] Projected Apogee = {apogee_prediction_ft:.2f} ft")
             last_print_time = current_time
 
@@ -145,7 +150,8 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, da
             f"{imu_data.yaw:.2f}", f"{imu_data.pitch:.2f}", f"{imu_data.roll:.2f}",
             f"{imu_data.a_x:.2f}", f"{imu_data.a_y:.2f}", f"{imu_data.a_z:.2f}",
             f"{imu_data.pressure:.2f}",
-            f"{imu_data.altitude:.2f}", f"{velocity_estimate:.2f}", f"{smoothed_altitude:.2f}",
+            f"{imu_data.altitude:.2f}", f"{velocity_er:.2f}", f"{smoothed_altitude:.2f}",
+            f"{altitude_kf:.2f}", f"{velocity_kf:.2f}",
             f"{apogee_prediction_ft:.2f}", f"{int(trigger_flag[0])}"
         ]
 
@@ -174,6 +180,7 @@ if __name__ == "__main__":
 
     # Initialize DataProcessor
     data_processor = DataProcessor(evan_length=EVAN_LENGTH, velocity_gap=VEL_GAP)
+    kf = KalmanFilter(dt=INTERVAL) # initialize Kalman filter
     rk4_model = Rk4(10)  # RK4 at 10 Hz for simulation
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False] 
