@@ -90,7 +90,7 @@ def imu_reader(imu, imu_deque, stop_event):
         time.sleep(IMU_INTERVAL * 0.95)
 
 
-def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ekf, servoMotor, launched_flag):
+def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor, launched_flag):
     output_directory = os.path.join("IMU_DATA")
     os.makedirs(output_directory, exist_ok=True)
 
@@ -177,7 +177,6 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
 
         # Print at a reduced rate
         if current_time - last_print_time >= PRINT_INTERVAL:
-            print(f"[EKF] dt = {dt:.4f} s")
             print(f"[IMU] Altitude={current_altitude:.2f} ft, Velocity={velocity_kf:.2f} ft/s")
             print(f"[RK4] Projected Apogee = {apogee_prediction_ft:.2f} ft")
             last_print_time = current_time
@@ -263,7 +262,7 @@ if __name__ == "__main__":
     imu_thread = threading.Thread(target=imu_reader, args=(imu, imu_deque, stop_event))
     logging_thread = threading.Thread(target=data_logging_process,
                                       args=(imu_deque, stop_event, groundAltitude,
-                                            triggerAltitudeAchieved, ekf, servoMotor, launched_flag))
+                                            triggerAltitudeAchieved, kf, servoMotor, launched_flag))
 
     imu_thread.start()
     logging_thread.start()
