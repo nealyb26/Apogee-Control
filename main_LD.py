@@ -13,20 +13,26 @@ from Servo import SinceCam
 from Rk4_v1 import Rk4
 #############################################################################
 """
-Deploys fins based on altitude trigger, uses EKF
+Deploys fins based on altitude trigger or RK4 apogee prediction
+Has launch detection at 3 G for 50 points (0.5s) 
 """
 # Conversions
 in_to_m = 0.0254
 ft_to_m = 0.3048
 m_to_ft = 3.28084
+lb_to_kg = 0.453592
+ft2_to_m2 = 0.092903
+g_to_kg = 0.001
 # Constants
 LOGGER_BUFFER = 18000  # 3 minutes (100 Hz)
 LAUNCH_ACCELERATION = 3 # In g
-ROCKET_MASS = 5.65 # kg
+PROPELLANT_MASS = 247,2 * g_to_kg # kg
+ROCKET_DRY_MASS = (13.2 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 # in
 ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER * in_to_m )**2 # m^2
 ACS_CD = 5 # CD of rocket with fins deployed
-TRIGGER_ALTITUDE = 100
+TRIGGER_ALTITUDE = 400
+TARGET_APOGEE = 800
 TARGET_FREQ = 100 # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
 PRINT_INTERVAL = 1 # print every 1s
@@ -94,10 +100,12 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
     last_print_time = 0
     last_prewrite_time = 0
     last_postwrite_time = 0
+
     consecutive_readings_gs = 0
-    consecutive_readings = 0
+    consecutive_readings_alt = 0
+    consecutive_readings_rk4 = 0
     required_consecutive = 50
-    
+
     def flush_pre_buffer():
         with open(pre_file, "w", newline='') as pre_f:
             writer = csv.writer(pre_f)
@@ -140,15 +148,14 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
                 print(f"[Launch Detected] acceleration = {imu_data.a_x:.2f} which exceeds 3g")
                 launch_time = current_time
         
-        altitude_estimate = 0
-        velocity_estimate = 0
+        apogee_prediction_m = 0
         apogee_prediction_ft = 0
 
-        if launched_flag[0]:
-            dt = current_time - last_time
-            ekf.predict(dt)
-            altitude_estimate, velocity_estimate= ekf.update(current_altitude * ft_to_m) # altitude in m, vel in mps
+        dt = current_time - last_time
+        ekf.predict(dt)
+        altitude_estimate, velocity_estimate= ekf.update(current_altitude * ft_to_m) # altitude in m, vel in mps
 
+        if launched_flag[0]:
             #### RK4 MODEL #################################################################################
             apogee_prediction_m = Rk4_model.rk4_apogee_predictor(current_altitude * ft_to_m, velocity_estimate)
             apogee_prediction_ft = apogee_prediction_m * m_to_ft # conversion to feet (ft)
@@ -168,11 +175,17 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, ek
         # Trigger logic
         if not trigger_flag[0]:
             if current_altitude > groundAltitude + TRIGGER_ALTITUDE:
-                consecutive_readings += 1
+                consecutive_readings_alt += 1
             else:
-                consecutive_readings = 0
+                consecutive_readings_alt = 0
 
-            if consecutive_readings >= (required_consecutive / 10): # 5 data points
+            if apogee_prediction_ft > groundAltitude + TARGET_APOGEE:
+                consecutive_readings_rk4 += 1
+            else:
+                consecutive_readings_rk4 = 0
+
+            # Fin trigger based on either alt check or goal apogee achieved
+            if (consecutive_readings_alt >= (required_consecutive / 10)) or (consecutive_readings_rk4 >= (required_consecutive / 10 )): # 5 data points
                 trigger_flag[0] = True
                 print("[Trigger] Target Altitude Achieved!")
                 servoMotor.set_angle(45)
@@ -217,8 +230,8 @@ if __name__ == "__main__":
     servoMotor.set_angle(0)
 
     #kf = KalmanFilter(dt=INTERVAL)
-    ekf = ExtendedKalmanFilter(mass = ROCKET_MASS, area = ROCKET_AREA, Cd = ACS_CD)
-    Rk4_model = Rk4(10) # 10 Hz for simulation loop (dt = 0.1)
+    ekf = ExtendedKalmanFilter(mass = ROCKET_DRY_MASS, area = ROCKET_AREA, Cd = ACS_CD)
+    Rk4_model = Rk4(frequency=10, mass=ROCKET_DRY_MASS) # 10 Hz for simulation loop (dt = 0.1)
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  # Use list for mutability across threads
 
