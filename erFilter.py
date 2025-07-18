@@ -1,7 +1,7 @@
 import numpy as np
 from collections import deque
 
-class DataProcessor:
+class ERFilter:
     def __init__(self, evan_length=300, velocity_gap=10):
         self.evan_length = evan_length
         self.velocity_gap = velocity_gap

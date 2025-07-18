@@ -5,7 +5,7 @@ import pandas as pd
 
 class Rk4:
 
-    def __init__(self, frequency=10, coeeff_drag = 5, mass=10, area=10):
+    def __init__(self, frequency=10, coeeff_drag = 5, mass=5, area=1):
         self.FREQUENCY = frequency
         self.MAX_TIME = 16
         self.GRAV_CONST = 9.80665 # gravity (m/s^2)

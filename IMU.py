@@ -146,8 +146,15 @@ class VN100IMU:
             self.read_thread.join(timeout=1)
             print("Closing serial connection...")
             self.serialConnection.close()
-
-
+    """ 
+    def wait_for_data(self, timeout=5):
+        #Block until first IMU data is available or timeout occurs.
+        start_time = time.time()
+        while self.currentData is None:
+            if time.time() - start_time > timeout:
+                raise TimeoutError("IMU did not produce data in time.")
+            time.sleep(0.01)
+ """
 # Usage example
 if __name__ == "__main__":
     imu = VN100IMU()
