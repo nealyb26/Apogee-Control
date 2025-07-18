@@ -13,7 +13,7 @@ from Servo import SinceCam
 from Rk4_v1 import Rk4
 #############################################################################
 """
-Deploys fins based on altitude trigger or RK4 apogee prediction
+Deploys fins based on altitude trigger or RK4 apogee prediction, EKF velocity calculation
 Has launch detection at 3 G for 50 points (0.5s) 
 """
 # Conversions
