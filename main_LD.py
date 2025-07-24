@@ -232,7 +232,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             f"{velocity_kf:.2f}", f"{altitude_kf:.2f}",
             f"{velocity_er:.2f}", f"{altitude_er:.2f}",
             f"{apogee_prediction_ft:.2f}", f"{int(trigger_flag[0])}",
-            f"{int(retract_flag[0])}, f"{er_apogee_ft:.2f}"
+            f"{int(retract_flag[0])}", f"{er_apogee_ft:.2f}"
         ]
 
         # data logging logic
