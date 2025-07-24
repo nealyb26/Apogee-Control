@@ -16,6 +16,7 @@ from erFilter import ERFilter
 Deploys fins based on altitude trigger or RK4 apogee prediction, 
 Kalman and erFilter
 Has launch detection at 3 G for 13 points (0.13s) on x axis
+Retracts fins when the velocity is negative for 0.5s
 """
 # Conversions
 in_to_m = 0.0254
@@ -32,7 +33,7 @@ ROCKET_DRY_MASS = (13.2 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 * in_to_m # m
 ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER)**2 # m^2
 ACS_CD = 5 # CD of rocket with fins deployed
-MOTOR_BURN_TIME = 1.1 * 1.1 # s with 10% delay
+MOTOR_BURN_TIME = 1.1 # 1.1 for I470, 1.5 I366
 # Code constants
 LOGGER_BUFFER = 3000  # 30 sec (100 Hz)
 TARGET_FREQ = 100 # main loop frequency
@@ -46,7 +47,7 @@ TRIGGER_ALTITUDE = 430 # ft
 TARGET_APOGEE = 750 # ft
 EVAN_LENGTH = 50
 VEL_GAP = 15
-SERVO_ANGLE = 90
+SERVO_ANGLE = 90 # deg
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -174,8 +175,10 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             er_apogee_m = Rk4_model.rk4_apogee_predictor(current_altitude * ft_to_m, velocity_er * ft_to_m)
             er_apogee_ft = er_apogee_m * m_to_ft
             #################################################################################################
+            
             ### Retract Logic ######################################################################
             if not retract_flag[0]:
+                #pass
                 if kf_velocity < 0:
                     consecutive_readings_retract += 1
                 else:
@@ -246,35 +249,27 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
 
         last_time = current_time
 
-    # Final flush after loop ends
+    # flush after final loop
     flush_pre_buffer()
     flush_post_buffer()
     combine_files(pre_file, post_file, output_file)
     print(f"[Shutdown] Data logging completed. Combined logs into {output_file}")
 
 
-
-
 if __name__ == "__main__":
+    # set constants
     launched_flag = [False]
     retract_flag = [False]
+   
     imu = VN100IMU()
-
     time.sleep(1.0)
+
     servoMotor = SinceCam()
     servoMotor.set_angle(0)
 
     stop_event = threading.Event()
-    triggerAltitudeAchieved = [False]  # Use list for mutability across threads
+    triggerAltitudeAchieved = [False]  
     launched_flag = [False]
-
-    def handle_shutdown(signum, frame):
-        print("Signal received. Shutting down...")
-        stop_event.set()
-
-    # Handle SIGINT and SIGTERM
-    signal.signal(signal.SIGINT, handle_shutdown)
-    signal.signal(signal.SIGTERM, handle_shutdown)
 
     groundAltitude = calculate_ground_altitude(imu)
 
@@ -297,6 +292,14 @@ if __name__ == "__main__":
                                       args=(imu_deque, stop_event, groundAltitude,
                                             triggerAltitudeAchieved, kf, servoMotor, launched_flag , er,
                                             Rk4_model, retract_flag))
+
+    def handle_shutdown(signum, frame):
+        print("Signal received. Shutting down...")
+        stop_event.set()
+
+    # Handle SIGINT and SIGTERM
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
 
     imu_thread.start()
     logging_thread.start()
