@@ -42,11 +42,11 @@ IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 10 seconds
 POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 10 seconds
 # Flight Constants
-TRIGGER_ALTITUDE = 435 # ft
-TARGET_APOGEE = 800 # ft
+TRIGGER_ALTITUDE = 430 # ft
+TARGET_APOGEE = 750 # ft
 EVAN_LENGTH = 50
 VEL_GAP = 15
-SERVO_ANGLE = 45
+SERVO_ANGLE = 90
 #############################################################################
 
 def calculate_ground_altitude(imu):
