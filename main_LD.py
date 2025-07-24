@@ -92,7 +92,7 @@ def imu_reader(imu, imu_deque, stop_event):
         time.sleep(IMU_INTERVAL * 0.95)
 
 
-def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor, launched_flag, er, Rk4_model):
+def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor, launched_flag, er, Rk4_model, retract_flag):
     output_directory = os.path.join("IMU_DATA")
     os.makedirs(output_directory, exist_ok=True)
 
@@ -111,6 +111,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     consecutive_readings_gs = 0
     consecutive_readings_alt = 0
     consecutive_readings_rk4 = 0
+    consecutive_readings_retract = 0
     required_consecutive = 50
 
     def flush_pre_buffer():
@@ -173,6 +174,17 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             er_apogee_m = Rk4_model.rk4_apogee_predictor(current_altitude * ft_to_m, velocity_er * ft_to_m)
             er_apogee_ft = er_apogee_m * m_to_ft
             #################################################################################################
+            ### Retract Logic ######################################################################
+            if not retract_flag[0]:
+                if kf_velocity < 0:
+                    consecutive_readings_retract += 1
+                else:
+                    consecutive_readings_retract = 0
+
+                if consecutive_readings_retract >= required_consecutive:
+                    retract_flag[0] = True
+                    servoMotor.set_angle(0)
+            ########################################################################################
         else:
             apogee_prediction_ft = current_altitude
             er_apogee_ft = current_altitude
@@ -245,6 +257,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
 
 if __name__ == "__main__":
     launched_flag = [False]
+    retract_flag = [False]
     imu = VN100IMU()
 
     time.sleep(1.0)
@@ -283,7 +296,7 @@ if __name__ == "__main__":
     logging_thread = threading.Thread(target=data_logging_process,
                                       args=(imu_deque, stop_event, groundAltitude,
                                             triggerAltitudeAchieved, kf, servoMotor, launched_flag , er,
-                                            Rk4_model))
+                                            Rk4_model, retract_flag))
 
     imu_thread.start()
     logging_thread.start()
