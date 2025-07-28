@@ -11,6 +11,7 @@ import sys
 from Servo import SinceCam
 from Rk4_v1 import Rk4
 from erFilter import ERFilter
+from datetime import datetime
 #############################################################################
 """
 Deploys fins based on altitude trigger or RK4 apogee prediction, 
@@ -27,28 +28,27 @@ kg_to_lb = 1/lb_to_kg
 ft2_to_m2 = 0.092903
 g_to_kg = 0.001
 # Physical Constants
-LAUNCH_ACCELERATION = 2.5 # In g
-PROPELLANT_MASS = 300 * g_to_kg # kg
-ROCKET_DRY_MASS = (13.8 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
+LAUNCH_ACCELERATION = 1 # In g
+PROPELLANT_MASS = 247.2 * g_to_kg # kg
+ROCKET_DRY_MASS = (13.2 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 * in_to_m # m
 ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER)**2 # m^2
-ACS_CD = 5 * 0.707 # CD of rocket with fins deployed
-MOTOR_BURN_TIME = 1.5 # 1.1 for I470, 1.5 I366
+ACS_CD = 5 # CD of rocket with fins deployed
+MOTOR_BURN_TIME = 1.1 # 1.1 for I470, 1.5 I366
 # Code constants
 LOGGER_BUFFER = 3000  # 30 sec (100 Hz)
 TARGET_FREQ = 100 # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
-PRINT_INTERVAL = 5 # print every 5s
+PRINT_INTERVAL = 5 # Print velocity and altitude readouts to terminal every 5s
 IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
-PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 10 seconds
-POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 10 seconds
+PREWRITE_INTERVAL = 0.1  # Limit writes to pre_file every 0.1 seconds
+POSTWRITE_INTERVAL = 0.1  # Limit writes to post_file every 0.1 seconds
 # Flight Constants
-TRIGGER_ALTITUDE = 650 # ft
+TRIGGER_ALTITUDE = 430 # ft
 TARGET_APOGEE = 750 # ft
 EVAN_LENGTH = 50
 VEL_GAP = 15
-START_ANGLE = 160 # deg
-SERVO_ANGLE = 160 - 45 # deg
+SERVO_ANGLE = 90 # deg
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -71,7 +71,7 @@ def combine_files(pre_file, post_file, output_file):
         writer = csv.writer(out_file)
         headers = ["Time", "Yaw", "Pitch", "Roll", "a_x", "a_y", "a_z",
                    "Pressure", "Altitude",
-                   "launchDetected",
+                   "launch_detected",
                    "kf_velocity", "kf_altitude",
                    "er_velocity", "er_altitude", 
                    "predicted_apogee", "trigger_achieved", "fins_retracted", "er_apogee_pred"]
@@ -102,6 +102,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     pre_file = os.path.join(output_directory, "data_log_pre.csv")
     post_file = os.path.join(output_directory, "data_log_post.csv")
     output_file = os.path.join(output_directory, "data_log_combined.csv")
+    terminal_file = os.path.join(output_directory, "terminal.txt")
 
     pre_trigger_buffer = deque(maxlen=LOGGER_BUFFER)
     post_trigger_buffer = []
@@ -120,14 +121,14 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
         with open(pre_file, "w", newline='') as pre_f:
             writer = csv.writer(pre_f)
             writer.writerows(pre_trigger_buffer)
-        print("[Log] Pre-trigger buffer flushed to disk.")
+        #print("[Log] Pre-trigger buffer flushed to disk.") # commented out to reduce file size
 
     def flush_post_buffer():
         if post_trigger_buffer:
             with open(post_file, "a", newline='') as post_f:
                 writer = csv.writer(post_f)
                 writer.writerows(post_trigger_buffer)
-            print(f"[Log] Flushed {len(post_trigger_buffer)} post-trigger rows.")
+            #print(f"[Log] Flushed {len(post_trigger_buffer)} post-trigger rows.")
             post_trigger_buffer.clear()
 
     next_logging_time = time.perf_counter()
@@ -179,17 +180,15 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             
             ### Retract Logic ######################################################################
             if not retract_flag[0]:
-                pass
-                """ if trigger_flag[0]: # prevents fin retraction before deployment
-                    if velocity_kf < 0:
-                        consecutive_readings_retract += 1
-                    else:
-                        consecutive_readings_retract = 0
+                #pass
+                if velocity_kf < 0:
+                    consecutive_readings_retract += 1
+                else:
+                    consecutive_readings_retract = 0
 
-                    if consecutive_readings_retract >= required_consecutive:
-                        retract_flag[0] = True
-                        servoMotor.set_angle(START_ANGLE)
-                        print(f"Fins Retracted") """
+                if consecutive_readings_retract >= required_consecutive:
+                    retract_flag[0] = True
+                    servoMotor.set_angle(0)
             ########################################################################################
         else:
             apogee_prediction_ft = current_altitude
@@ -245,6 +244,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
                 flush_pre_buffer()
                 last_prewrite_time = current_time
         else:
+            flush_pre_buffer()
             post_trigger_buffer.append(data_row)
             if current_time - last_postwrite_time >= POSTWRITE_INTERVAL:
                 flush_post_buffer()
@@ -260,6 +260,12 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
 
 
 if __name__ == "__main__":
+    # directory for terminal .txt
+    os.makedirs("IMU_DATA", exist_ok=True)
+    log_path = os.path.join("IMU_DATA", "terminal.txt")
+    sys.stdout = open(log_path, "w", buffering=1)  # line-buffered
+    sys.stderr = sys.stdout
+
     # set constants
     launched_flag = [False]
     retract_flag = [False]
@@ -268,11 +274,10 @@ if __name__ == "__main__":
     time.sleep(1.0)
 
     servoMotor = SinceCam()
-    servoMotor.set_angle(START_ANGLE)
+    servoMotor.set_angle(0)
 
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  
-    launched_flag = [False]
 
     groundAltitude = calculate_ground_altitude(imu)
 
@@ -300,9 +305,10 @@ if __name__ == "__main__":
         print("Signal received. Shutting down...")
         stop_event.set()
 
-    # Handle SIGINT and SIGTERM
+    # Handle SIGINT, SIGTERM, and SIGPIPE
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
     imu_thread.start()
     logging_thread.start()
