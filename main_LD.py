@@ -27,13 +27,13 @@ kg_to_lb = 1/lb_to_kg
 ft2_to_m2 = 0.092903
 g_to_kg = 0.001
 # Physical Constants
-LAUNCH_ACCELERATION = 1 # In g
-PROPELLANT_MASS = 247.2 * g_to_kg # kg
-ROCKET_DRY_MASS = (13.2 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
+LAUNCH_ACCELERATION = 2.5 # In g
+PROPELLANT_MASS = 300 * g_to_kg # kg
+ROCKET_DRY_MASS = (13.8 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 * in_to_m # m
 ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER)**2 # m^2
-ACS_CD = 5 # CD of rocket with fins deployed
-MOTOR_BURN_TIME = 1.1 # 1.1 for I470, 1.5 I366
+ACS_CD = 5 * 0.707 # CD of rocket with fins deployed
+MOTOR_BURN_TIME = 1.5 # 1.1 for I470, 1.5 I366
 # Code constants
 LOGGER_BUFFER = 3000  # 30 sec (100 Hz)
 TARGET_FREQ = 100 # main loop frequency
@@ -43,11 +43,12 @@ IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 10  # Limit writes to pre_file every 10 seconds
 POSTWRITE_INTERVAL = 10  # Limit writes to post_file every 10 seconds
 # Flight Constants
-TRIGGER_ALTITUDE = 430 # ft
+TRIGGER_ALTITUDE = 650 # ft
 TARGET_APOGEE = 750 # ft
 EVAN_LENGTH = 50
 VEL_GAP = 15
-SERVO_ANGLE = 90 # deg
+START_ANGLE = 160 # deg
+SERVO_ANGLE = 160 - 45 # deg
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -73,7 +74,7 @@ def combine_files(pre_file, post_file, output_file):
                    "launchDetected",
                    "kf_velocity", "kf_altitude",
                    "er_velocity", "er_altitude", 
-                   "predicted_apogee", "trigger_achieved", "fins_retracted" "er_apogee_pred"]
+                   "predicted_apogee", "trigger_achieved", "fins_retracted", "er_apogee_pred"]
         writer.writerow(headers)
 
         for file_path in [pre_file, post_file]:
@@ -178,15 +179,17 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             
             ### Retract Logic ######################################################################
             if not retract_flag[0]:
-                #pass
-                if kf_velocity < 0:
-                    consecutive_readings_retract += 1
-                else:
-                    consecutive_readings_retract = 0
+                pass
+                """ if trigger_flag[0]: # prevents fin retraction before deployment
+                    if velocity_kf < 0:
+                        consecutive_readings_retract += 1
+                    else:
+                        consecutive_readings_retract = 0
 
-                if consecutive_readings_retract >= required_consecutive:
-                    retract_flag[0] = True
-                    servoMotor.set_angle(0)
+                    if consecutive_readings_retract >= required_consecutive:
+                        retract_flag[0] = True
+                        servoMotor.set_angle(START_ANGLE)
+                        print(f"Fins Retracted") """
             ########################################################################################
         else:
             apogee_prediction_ft = current_altitude
@@ -265,7 +268,7 @@ if __name__ == "__main__":
     time.sleep(1.0)
 
     servoMotor = SinceCam()
-    servoMotor.set_angle(0)
+    servoMotor.set_angle(START_ANGLE)
 
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  
