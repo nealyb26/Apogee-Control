@@ -103,10 +103,9 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     pre_file = os.path.join(output_directory, "data_log_pre.csv")
     post_file = os.path.join(output_directory, "data_log_post.csv")
     output_file = os.path.join(output_directory, "data_log_combined.csv")
-    #terminal_file = os.path.join(output_directory, "terminal.txt")
 
     pre_trigger_buffer = deque(maxlen=LOGGER_BUFFER)
-    pre_buffer_flushed = False  # Initialize flush flag
+    pre_buffer_finished = False  # Initialize flush flag
     post_trigger_buffer = []
 
     last_print_time = 0
@@ -167,7 +166,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
                 consecutive_readings_gs += 1
             else:
                 consecutive_readings_gs = 0
-            if consecutive_readings_gs >= required_consecutive / 4: # 13 data points (0.13) s
+            if consecutive_readings_gs >= required_consecutive / 5: # 10 data points (0.1s)
                 launched_flag[0] = True
                 print(f"[Launch Detection] Acceleration of {imu_data.a_x:.2f} exceeds {LAUNCH_ACCELERATION} G")
                 launch_time = current_time
@@ -249,25 +248,25 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
                 last_prewrite_time = current_time
         else:
 
-            if not pre_buffer_flushed:
+            if not pre_buffer_finished:
                 flush_pre_buffer()
-                pre_buffer_flushed = True
+                pre_buffer_finished = True
 
             post_trigger_buffer.append(data_row)
             if current_time - last_postwrite_time >= POSTWRITE_INTERVAL:
                 flush_post_buffer()
                 last_postwrite_time = current_time
 
-    # flush after final loop
+    # combine files at end
     combine_files(pre_file, post_file, output_file)
     print(f"[Shutdown] Data logging completed. Combined logs into {output_file}")
 
 
 if __name__ == "__main__":
-    # directory for terminal .txt
+    # directory for terminal.txt, all prints go to the text file
     os.makedirs("IMU_DATA", exist_ok=True)
     log_path = os.path.join("IMU_DATA", "terminal.txt")
-    sys.stdout = open(log_path, "w", buffering=1)  # line-buffered
+    sys.stdout = open(log_path, "w", buffering=1)  
     sys.stderr = sys.stdout
 
     # set constants
