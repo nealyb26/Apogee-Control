@@ -1,3 +1,4 @@
+Time,Yaw,Pitch,Roll,a_x,a_y,a_z,Pressure,Altitude,launch_detected,kf_velocity,kf_altitude,er_velocity,er_altitude,predicted_apogee,trigger_achieved,fins_retracted,er_apogee_pred
 1437.571746,-179.44,-11.81,137.64,-0.20,-0.64,0.70,99.76,428.82,0,-0.00,428.82,nan,nan,428.82,0,0,428.82
 1437.591163,-179.45,-11.81,137.64,-0.20,-0.64,0.71,99.78,425.51,0,-0.00,428.81,nan,nan,425.51,0,0,425.51
 1437.600846,-179.45,-11.81,137.64,-0.20,-0.64,0.71,99.78,425.51,0,-0.00,428.80,nan,nan,425.51,0,0,425.51

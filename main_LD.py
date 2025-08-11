@@ -28,13 +28,13 @@ kg_to_lb = 1/lb_to_kg
 ft2_to_m2 = 0.092903
 g_to_kg = 0.001
 # Physical Constants
-LAUNCH_ACCELERATION = 1 # In g
-PROPELLANT_MASS = 247.2 * g_to_kg # kg
-ROCKET_DRY_MASS = (13.2 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
+LAUNCH_ACCELERATION = 0.1 # In g
+PROPELLANT_MASS = 163 * g_to_kg # kg
+ROCKET_DRY_MASS = (13.02 *lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 * in_to_m # m
 ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER)**2 # m^2
-ACS_CD = 5 # CD of rocket with fins deployed
-MOTOR_BURN_TIME = 1.1 # 1.1 for I470, 1.5 I366
+ACS_CD = 3.45 # CD of rocket with fins deployed
+MOTOR_BURN_TIME = 1.0 # 1.1 for I470, 1.5 I366
 # Code constants
 LOGGER_BUFFER = 3000  # 30 sec (100 Hz)
 TARGET_FREQ = 100 # main loop frequency
@@ -44,11 +44,12 @@ IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 0.1  # Limit writes to pre_file every 0.1 seconds
 POSTWRITE_INTERVAL = 0.1  # Limit writes to post_file every 0.1 seconds
 # Flight Constants
-TRIGGER_ALTITUDE = 430 # ft
-TARGET_APOGEE = 750 # ft
+TRIGGER_ALTITUDE = 10 # ft
+TARGET_APOGEE = 10 # ft
 EVAN_LENGTH = 50
 VEL_GAP = 15
-SERVO_ANGLE = 90 # deg
+SERVO_START = 80
+SERVO_ANGLE = 125 # deg
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -180,15 +181,15 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             
             ### Retract Logic ######################################################################
             if not retract_flag[0]:
-                #pass
-                if velocity_kf < 0:
+                pass
+                """ if velocity_kf < 0:
                     consecutive_readings_retract += 1
                 else:
                     consecutive_readings_retract = 0
 
                 if consecutive_readings_retract >= required_consecutive:
                     retract_flag[0] = True
-                    servoMotor.set_angle(0)
+                    servoMotor.set_angle(SERVO_START) """
             ########################################################################################
         else:
             apogee_prediction_ft = current_altitude
@@ -274,7 +275,7 @@ if __name__ == "__main__":
     time.sleep(1.0)
 
     servoMotor = SinceCam()
-    servoMotor.set_angle(0)
+    servoMotor.set_angle(SERVO_START)
 
     stop_event = threading.Event()
     triggerAltitudeAchieved = [False]  
