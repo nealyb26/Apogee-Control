@@ -78,11 +78,9 @@ def combine_files(pre_file, post_file, output_file):
                    "predicted_apogee", "trigger_achieved", "fins_retracted", "er_apogee_pred"]
         writer.writerow(headers)
 
-        for file_path in [pre_file, post_file]:
-            if os.path.exists(file_path):
-                with open(file_path, "r") as in_file:
-                    for line in in_file:
-                        writer.writerow(line.strip().split(","))
+        for file in [pre_file, post_file]:
+            for line in file:
+                writer.writerow(line.strip().split(","))
 
 def imu_reader(imu, imu_deque, stop_event):
     while not stop_event.is_set():
@@ -100,10 +98,17 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     os.makedirs(output_directory, exist_ok=True)
 
     # pre and post based on fin trigger, not launch
-    pre_file = os.path.join(output_directory, "data_log_pre.csv")
-    post_file = os.path.join(output_directory, "data_log_post.csv")
+    pre_file_path = os.path.join(output_directory, "data_log_pre.csv")
+    post_file_path = os.path.join(output_directory, "data_log_post.csv")
     output_file = os.path.join(output_directory, "data_log_combined.csv")
     terminal_file = os.path.join(output_directory, "terminal.txt")
+
+    # Open pre and post files and reader
+    pre_file = open(pre_file_path, "w", newline='')
+    post_file = open(post_file_path, "a", newline='')
+
+    pre_writer = csv.writer(pre_file)
+    post_writer = csv.writer(post_file)
 
     pre_trigger_buffer = deque(maxlen=LOGGER_BUFFER)
     post_trigger_buffer = []
@@ -118,19 +123,18 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     consecutive_readings_retract = 0
     required_consecutive = 50
 
-    def flush_pre_buffer():
-        with open(pre_file, "w", newline='') as pre_f:
-            writer = csv.writer(pre_f)
-            writer.writerows(pre_trigger_buffer)
+    def flush_pre_buffer(pre_file):
+        if pre_trigger_buffer:
+            pre_writer.writerows(pre_trigger_buffer)
+            pre_file.flush()
         #print("[Log] Pre-trigger buffer flushed to disk.") # commented out to reduce file size
 
-    def flush_post_buffer():
+    def flush_post_buffer(post_file):
         if post_trigger_buffer:
-            with open(post_file, "a", newline='') as post_f:
-                writer = csv.writer(post_f)
-                writer.writerows(post_trigger_buffer)
+            post_writer.writerows(post_trigger_buffer)
             #print(f"[Log] Flushed {len(post_trigger_buffer)} post-trigger rows.")
             post_trigger_buffer.clear()
+            post_file.flush()
 
     next_logging_time = time.perf_counter()
 
@@ -242,10 +246,10 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
         if not trigger_flag[0]:
             pre_trigger_buffer.append(data_row)
             if current_time - last_prewrite_time >= PREWRITE_INTERVAL:
-                flush_pre_buffer()
+                flush_pre_buffer(pre_file)
                 last_prewrite_time = current_time
         else:
-            flush_pre_buffer()
+            flush_pre_buffer(post_file)
             post_trigger_buffer.append(data_row)
             if current_time - last_postwrite_time >= POSTWRITE_INTERVAL:
                 flush_post_buffer()
@@ -254,9 +258,11 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
         last_time = current_time
 
     # flush after final loop
-    flush_pre_buffer()
-    flush_post_buffer()
+    flush_pre_buffer(pre_file)
+    flush_post_buffer(post_file)
     combine_files(pre_file, post_file, output_file)
+    pre_file.close()
+    post_file.close()
     print(f"[Shutdown] Data logging completed. Combined logs into {output_file}")
 
 
