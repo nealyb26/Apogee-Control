@@ -39,7 +39,7 @@ MOTOR_BURN_TIME = 1.0 # 1.1 for I470, 1.5 I366
 LOGGER_BUFFER = 3000  # 30 sec (100 Hz)
 TARGET_FREQ = 100 # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
-PRINT_INTERVAL = 5 # Print velocity and altitude readouts to terminal every 5s
+PRINT_INTERVAL = 60 # Print velocity and altitude readouts to terminal every 60s
 IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 0.1  # Limit writes to pre_file every 0.1 seconds
 POSTWRITE_INTERVAL = 0.1  # Limit writes to post_file every 0.1 seconds
@@ -92,7 +92,7 @@ def imu_reader(imu, imu_deque, stop_event):
         else:
             pass
             print("[imu_reader] No new data")
-        time.sleep(IMU_INTERVAL * 0.95)
+        time.sleep(IMU_INTERVAL * 0.05)
 
 
 def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor, launched_flag, er, Rk4_model, retract_flag):
@@ -103,9 +103,10 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     pre_file = os.path.join(output_directory, "data_log_pre.csv")
     post_file = os.path.join(output_directory, "data_log_post.csv")
     output_file = os.path.join(output_directory, "data_log_combined.csv")
-    terminal_file = os.path.join(output_directory, "terminal.txt")
+    #terminal_file = os.path.join(output_directory, "terminal.txt")
 
     pre_trigger_buffer = deque(maxlen=LOGGER_BUFFER)
+    pre_buffer_flushed = False  # Initialize flush flag
     post_trigger_buffer = []
 
     last_print_time = 0
@@ -122,14 +123,16 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
         with open(pre_file, "w", newline='') as pre_f:
             writer = csv.writer(pre_f)
             writer.writerows(pre_trigger_buffer)
-        #print("[Log] Pre-trigger buffer flushed to disk.") # commented out to reduce file size
+            pre_f.flush()  # Flush the I/O buffers to the operating system
+            os.fsync(pre_f.fileno())  # Ensure data is written to the disk
 
     def flush_post_buffer():
         if post_trigger_buffer:
             with open(post_file, "a", newline='') as post_f:
                 writer = csv.writer(post_f)
                 writer.writerows(post_trigger_buffer)
-            #print(f"[Log] Flushed {len(post_trigger_buffer)} post-trigger rows.")
+                post_f.flush()  # Flush the I/O buffers to the operating system
+                os.fsync(post_f.fileno())  # Ensure data is written to the disk
             post_trigger_buffer.clear()
 
     next_logging_time = time.perf_counter()
@@ -245,17 +248,17 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
                 flush_pre_buffer()
                 last_prewrite_time = current_time
         else:
-            flush_pre_buffer()
+
+            if not pre_buffer_flushed:
+                flush_pre_buffer()
+                pre_buffer_flushed = True
+
             post_trigger_buffer.append(data_row)
             if current_time - last_postwrite_time >= POSTWRITE_INTERVAL:
                 flush_post_buffer()
                 last_postwrite_time = current_time
 
-        last_time = current_time
-
     # flush after final loop
-    flush_pre_buffer()
-    flush_post_buffer()
     combine_files(pre_file, post_file, output_file)
     print(f"[Shutdown] Data logging completed. Combined logs into {output_file}")
 
