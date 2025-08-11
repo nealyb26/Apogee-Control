@@ -1,0 +1,17 @@
+IMU initialized, starting data monitoring
+Servo set to 80 degrees
+Calculating ground altitude...
+Ground Altitude: 514.35 ft
+[IMU] Alt=-6.37 ft AGL, KF Vel=-0.00 ft/s , ER Vel =nan ft/s
+[RK4] Projected Apogee = -6.37 ft AGL
+[Launch Detection] Acceleration of 1.00 exceeds 1 G
+[Trigger] Target Altitude of 1051.80 ft AGL Achieved!
+Servo set to 125 degrees
+[Apogee Detected]
+[IMU] Alt=2364.90 ft AGL, KF Vel=-617.74 ft/s , ER Vel =-642.69 ft/s
+[RK4] Projected Apogee = 2364.90 ft AGL
+[IMU] Alt=-0.28 ft AGL, KF Vel=1.55 ft/s , ER Vel =0.00 ft/s
+[RK4] Projected Apogee = -0.28 ft AGL
+[Landing Detection] No new minimum altitude seen for 10.00 seconds
+[Shutdown] Data logging completed. Combined logs into IMU_DATA/data_log_combined.csv
+[Main] Shutdown complete.

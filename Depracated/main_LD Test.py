@@ -105,7 +105,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
     output_file = os.path.join(output_directory, "data_log_combined.csv")
 
     pre_trigger_buffer = deque(maxlen=LOGGER_BUFFER)
-    pre_buffer_finished = False  # Initialize flush flag
+    pre_buffer_finished = False  
     post_trigger_buffer = []
 
     last_print_time = 0
