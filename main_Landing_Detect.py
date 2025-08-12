@@ -35,17 +35,17 @@ ROCKET_DRY_MASS = (13.02 * lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 * in_to_m # m
 ROCKET_AREA = (math.pi/4) * (ROCKET_DIAMETER)**2 # m^2
 ACS_CD = 3.45 # CD of rocket with fins deployed
-MOTOR_BURN_TIME = 1.0 # 1.1 for I470, 1.5 I366
+MOTOR_BURN_TIME = 1.0 # 1.1 for I470, 1.5 I366, 1.0 for I357
 # Code constants
 LOGGER_BUFFER = 1000  # 10 sec (100 Hz)
 TARGET_FREQ = 100 # main loop frequency
 INTERVAL = 1 / TARGET_FREQ
-PRINT_INTERVAL = 30 # Print velocity and altitude readouts to terminal every 30s
+PRINT_INTERVAL = 60 # Print velocity and altitude readouts to terminal every 30s
 IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 1  # Limit writes to pre_file every 1 second
 POSTWRITE_INTERVAL = 1  # Limit writes to post_file every 1 second
 # Flight Constants
-TRIGGER_ALTITUDE = 1000 # ft
+TRIGGER_ALTITUDE = 5000 # ft
 TARGET_APOGEE = 10000 # ft
 EVAN_LENGTH = 50
 VEL_GAP = 15
@@ -94,7 +94,6 @@ def imu_reader(imu, imu_deque, stop_event):
             pass
             print("[imu_reader] No new data")
         time.sleep(IMU_INTERVAL * 0.05)
-
 
 def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf, servoMotor, launched_flag, er, Rk4_model, apogee_flag):
     output_directory = os.path.join("IMU_DATA")
@@ -187,7 +186,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             #################################################################################################
             
             ### Retract Logic ######################################################################
-            if (not apogee_flag[0]) and (current_altitude > groundAltitude + 100) :
+            if (not apogee_flag[0]) and (current_altitude > groundAltitude + 100) : #remove and condition for non lab testing
                 if velocity_kf < 0:
                     consecutive_readings_retract += 1
                 else:
@@ -197,6 +196,9 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
                     apogee_flag[0] = True
                     print(f"[Apogee Detected]")
                     previous_altitude = current_altitude
+                    os.fsync(pre_file.fileno()) # write to disk
+                    os.fsync(post_file.fileno())
+                    print(f"Fsync to disk")
                     #servoMotor.set_angle(SERVO_START) # disable retract for now
             ########################################################################################
         else:
