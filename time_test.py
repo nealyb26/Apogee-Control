@@ -1,5 +1,6 @@
-import math
 import time
+program_start_time = time.perf_counter()  # <<< Start elapsed timer immediately
+import math
 from IMU import VN100IMU
 from Kalman import KalmanFilter
 from collections import deque
@@ -29,7 +30,7 @@ kg_to_lb = 1/lb_to_kg
 ft2_to_m2 = 0.092903
 g_to_kg = 0.001
 # Physical Constants
-LAUNCH_ACCELERATION = 1.25 # In g
+LAUNCH_ACCELERATION = 0.5 # In g
 PROPELLANT_MASS = 163 * g_to_kg # kg
 ROCKET_DRY_MASS = (13.02 * lb_to_kg) - PROPELLANT_MASS # DRY MASS in kg
 ROCKET_DIAMETER = 4.014 * in_to_m # m
@@ -45,12 +46,12 @@ IMU_INTERVAL = 1/200 # IMU runs at 200 Hz
 PREWRITE_INTERVAL = 1  # Limit writes to pre_file every 1 second
 POSTWRITE_INTERVAL = 1  # Limit writes to post_file every 1 second
 # Flight Constants
-TRIGGER_ALTITUDE = 5000 # ft
+TRIGGER_ALTITUDE = 0.0001 # ft
 TARGET_APOGEE = 10000 # ft
 EVAN_LENGTH = 50
 VEL_GAP = 15
-SERVO_START = 80
-SERVO_ANGLE = 125 # deg
+SERVO_START = 0
+SERVO_ANGLE = 180 # deg
 #############################################################################
 
 def calculate_ground_altitude(imu):
@@ -226,12 +227,14 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             # Fin trigger based on either alt check or goal apogee achieved
             if (consecutive_readings_alt >= 5): # 0.05 s
                 trigger_flag[0] = True
-                print(f"[Trigger] Target Altitude of {current_altitude - groundAltitude:.2f} ft AGL Achieved!")
+                elapsed = current_time - program_start_time  # <<< NEW LINE ADDED
+                print(f"[{elapsed:.6f} s] [Trigger] Target Altitude of {current_altitude - groundAltitude:.2f} ft AGL Achieved!")
                 servoMotor.set_angle(SERVO_ANGLE)
             
             if (consecutive_readings_rk4 >= 5): # 0.05 s
                 trigger_flag[0] = True
-                print(f"[Trigger] Goal Apogee of {apogee_prediction_ft - groundAltitude:.2f} ft AGL Achieved!")
+                elapsed = current_time - program_start_time  # <<< NEW LINE ADDED
+                print(f"[{elapsed:.6f} s] [Trigger] Goal Apogee of {apogee_prediction_ft - groundAltitude:.2f} ft AGL Achieved!")
                 servoMotor.set_angle(SERVO_ANGLE)
         ########################################################################################
         
