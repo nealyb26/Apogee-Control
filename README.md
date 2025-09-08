@@ -1,2 +1,2 @@
-# Apogee-Control
-Summer 2025 Project
+# Payload Control System
+25-26 Rocket Team

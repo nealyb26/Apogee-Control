@@ -187,7 +187,7 @@ def data_logging_process(imu_deque, stop_event, groundAltitude, trigger_flag, kf
             
             ### Retract Logic ######################################################################
             if (not apogee_flag[0]) and (current_altitude > groundAltitude + 100) : #remove and condition for non lab testing
-                if velocity_kf < 0:
+                if velocity_kf < 0: # Velocity Derived from Alt vs. Time - (purely vertical velocity)
                     consecutive_readings_retract += 1
                 else:
                     consecutive_readings_retract = 0
@@ -312,6 +312,20 @@ if __name__ == "__main__":
     groundAltitude = calculate_ground_altitude(imu)
 
     # Initialize classes
+    '''
+    Kalman Filter - two step process. Using current understanding of rocket state (alt & vel) & kinematics
+    equations. Predicts where rocket is next. Then gets real altimeter measurement. Prediction or Measurement
+    by itself is inaccurate - combines two to make improved estimate.
+    
+        Used in: main_landing_detect for finding altitude velocity (line 165) - apogee detection and prediction
+
+    ER Filter - simpler type of filter. Smoothing and Slope Calculator.
+        1. Smoothing: History of recent altitude readings in buffer (deque) - "smoothed" alt by calculating avg of points in buffer (removes jerkiness)
+        2. Velocity: 2 segments of smooth altitude history - finds slope (delta_alt/delta_time) avgs two slopes for final velo est. 
+
+        Used in: redudancy and post flight comparison with Kalman Filter. 
+    
+    '''
     er = ERFilter(evan_length=EVAN_LENGTH, velocity_gap=VEL_GAP)
     kf = KalmanFilter(dt=INTERVAL,ground = groundAltitude)
     Rk4_model = Rk4(frequency=10, coeeff_drag=ACS_CD, mass=ROCKET_DRY_MASS, area=ROCKET_AREA) # 10 Hz for simulation loop (dt = 0.1)
@@ -345,7 +359,7 @@ if __name__ == "__main__":
 
     try:
         while not stop_event.is_set():
-            time.sleep(0.1)
+            time.sleep(0.1) # Could actually be faster to call rospy.Rate(10)
     except KeyboardInterrupt:
         print("\n[Main] KeyboardInterrupt received.")
         stop_event.set()
