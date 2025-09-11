@@ -39,7 +39,6 @@ void FlightState_Update(void) {
 
     KalmanFilter_Update(altitude, &filteredAltitude, &filteredVelocity);
 
-
     /*Ground Logic*/
     if (currentState == FLIGHT_STATE_GROUND_IDLE) {
         if (fabsf(imuData.accelX) > LAUNCH_ACCELERATION_THRESHOLD) {
@@ -56,26 +55,73 @@ void FlightState_Update(void) {
     }
 
     /*Apogee Detection*/
-    if (currentState == FLIGHT_STATE_POWERED_FLIGHT) {
-        if (filteredVelocity < 0) {
+    if (currentState == FLIGHT_STATE_POWERED_FLIGHT || currentState == FLIGHT_STATE_UNPOWERED_FLIGHT) {
+        
+        /*State Change from powered to unpowered ascent*/
+        if (currentState == FLIGHT_STATE_POWERED_FLIGHT && 
+            (HAL_GetTick() - launchTime) > MOTOR_BURN_TIME_MS)
+            currentState = FLIGHT_STATE_UNPOWERED_FLIGHT;
+            //DataLogger_LogEvent("Motor Burnout")
+        
+        /*Check for Apogee*/
+        if (filteredVelocity < 0.0f && altitude > (groundAltitude + MIN_ALTITUDE_FOR_APOGEE)) {
             consecutiveReadingsApogee++;
         } else {
             consecutiveReadingsApogee = 0;
         }
-        
-        /*State Change from powered to unpowered ascent*/
-        if (currentState == FLIGHT_STATE_POWERED_FLIGHT || currentState == FLIGHT_STATE_UNPOWERED_FLIGHT) {
-            if (currentState == FLIGHT_STATE_POWERED_FLIGHT && 
-                (HAL_GetTick() - launchTime) > MOTOR_BURN_TIME_MS)
-                currentState = FLIGHT_STATE_UNPOWERED_FLIGHT;
-                //DataLogger_LogEvent("Motor Burnout")
-            
-            }
 
+        if (consecutiveReadingsApogee >= APOGEE_DETECTION_COUNT) {
+            currentState = FLIGHT_STATE_DROGUE_DESCENT;
+            apogeeTime = HAL_GetTick();
+            //DataLogger_LogEvent("Apogee Detected");
+            previousAltitude = altitude;
         }
-
-
     }
 
+    /*Landing Detection*/
+    if (currentState == FLIGHT_STATE_DROGUE_DESCENT || currentState == FLIGHT_STATE_MAIN_DESCENT) {
+
+        /*Check for Main Chute Deployment*/
+        if (currentState == FLIGHT_STATE_DROGUE_DESCENT && altitude < (groundAltitude + MAIN_CHUTE_ALTITUDE)) {
+            currentState = FLIGHT_STATE_MAIN_DESCENT;
+            //DataLogger_LogEvent("Main Descent Detected")
+        }
+
+        /*Landed State Condition - No New Altitude in (x) cycles*/
+        if (altitude < previousAltitude) {
+            previousAltitude = altitude;
+            consecutiveReadingsLanding = 0;
+        } else {
+            consecutiveReadingsLanding++;
+        }
+
+        if (consecutiveReadingsLanding > LANDING_DETECTION_COUNT) {
+            currentState = FLIGHT_STATE_LANDED;
+            // landingTime = HAL_GetTick();
+            // DataLogger_LogEvent("Landing Detected");
+
+            // Payload Activate();
+        }
+    }
+
+    DataLogger_LogState(currentState, altitude, filteredAltitude, filteredVelocity);
+
 }
+
+/* Task function if using RTOS */
+#ifdef USE_RTOS
+void FlightState_Task(void* parameters) {
+    TickType_t lastWakeTime = xTaskGetTickCount();
+    const TickType_t frequency = pdMS_TO_TICKS(10); // 100Hz
+    
+    while (1) {
+        /* Precise timing with vTaskDelayUntil */
+        vTaskDelayUntil(&lastWakeTime, frequency);
+        
+        /* Update flight state */
+        FlightState_Update();
+    }
+}
+
+#endif
 

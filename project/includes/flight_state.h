@@ -34,5 +34,18 @@ typedef enum {
 #define MAIN_CHUTE_ALTITUDE            500.0f  /* Altitude (ft) for main chute deployment */
 #define MOTOR_BURN_TIME_MS             1000    /* Motor burn time in milliseconds */
 
+void FlightState_Init(void);
+void FlightState_Update(void);
+FlightState_t FlightState_GetCurrent(void);
+float FlightState_GetGroundAltitude(void);
+uint32_t FlightState_GetLaunchTime(void);
+uint32_t FlightState_GetApogeeTime(void);
+uint32_t FlightState_GetLandingTime(void);
+float FlightState_GetMaxAltitude(void);
+float FlightState_GetMaxVelocity(void);
+
+#ifdef USE_RTOS
+void FlightState_Task(void* parameters);
+#endif
 
 #endif
